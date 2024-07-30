@@ -2,6 +2,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 from glob import glob
+from pprint import pformat
 
 from tqdm import tqdm
 
@@ -16,11 +17,13 @@ class CmpStr:
     translated: str = field(default="")
     line_num: int = -1
 
-    def check(self):
+    def check(self, **args):
         found = re.findall(PARA_IDX_PAT, self.original)
         if found:
             found_trans = re.findall(PARA_IDX_PAT, self.translated)
-            assert found_trans and (found[0] == found_trans[0]), self
+            assert found_trans and (found[0] == found_trans[0]), pformat([args, self])
+        
+        return True
 
 
 @dataclass
@@ -31,7 +34,10 @@ class TimeSegment:
     def check(self):
         assert re.findall("\d+", self.start_time.original) and re.findall(
             "\d+", self.start_time.translated
-        ), self.start_time
+        ), pformat(self.start_time)
+
+        for s in self.sentences:
+            s.check(time=self.start_time)
 
 
 @dataclass
@@ -40,7 +46,7 @@ class Chapter:
     segments: List[TimeSegment] = field(default_factory=list)
 
     def check(self):
-        assert "卷" in self.title
+        assert "卷" in self.title, pformat(self.title)
 
 
 @dataclass
@@ -78,10 +84,11 @@ for f in pbar:
                     break
                 elif line != "\n":
                     ts.sentences.append(CmpStr(line.strip(), lines[i + 2].strip(), i))
-                    ts.sentences[-1].check()
+                    ts.sentences[-1].check(time=ts.start_time)
                     i += 3
                 else:
                     raise RuntimeError(lines[i])
+            ts.check()
             chapter.segments.append(ts)
         else:
             raise RuntimeError(lines[i : i + 5])
