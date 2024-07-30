@@ -21,7 +21,7 @@ class CmpStr:
         found = re.findall(PARA_IDX_PAT, self.original)
         if found:
             found_trans = re.findall(PARA_IDX_PAT, self.translated)
-            assert found_trans and (found[0] == found_trans[0]), pformat([args, self])
+            assert ('[todo]' in self.translated) or found_trans and (found[0] == found_trans[0]), pformat([args, self])
         
         return True
 
