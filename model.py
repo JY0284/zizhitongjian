@@ -1,5 +1,7 @@
 import re
-from dataclasses import dataclass, field
+import json
+import os
+from dataclasses import dataclass, field, asdict
 from typing import List
 from glob import glob
 from pprint import pformat
@@ -46,6 +48,7 @@ class TimeSegment:
 
 @dataclass
 class Chapter:
+    index: int = field(default=-1)
     title: str = field(default="")
     segments: List[TimeSegment] = field(default_factory=list)
 
@@ -59,16 +62,17 @@ class Book:
 
 
 book = Book()
-pbar = tqdm(files[2:])
+pbar = tqdm(files)
 for f in pbar:
     cur_file = f
     pbar.set_description(f)
     lines = open(f, "r").readlines()
     chapter = Chapter()
     chapter.title = lines[0].strip("\n")
+    chapter.index = int(f.split(os.sep)[-1].split('_')[0])
     i = 1
-    lines_bar = tqdm(total=len(lines))
-    lines_bar.update(1)
+    # lines_bar = tqdm(total=len(lines))
+    # lines_bar.update(1)
     while i < len(lines):
         line = lines[i]
         if line == "\n":
@@ -80,7 +84,7 @@ for f in pbar:
             ts.check()
             i += 3
             while i < len(lines):
-                lines_bar.update(i - lines_bar.n)
+                # lines_bar.update(i - lines_bar.n)
                 line = lines[i]
                 if line == "\n":
                     i += 1
@@ -97,6 +101,9 @@ for f in pbar:
             chapter.segments.append(ts)
         else:
             raise RuntimeError(lines[i : i + 5])
-        lines_bar.update(i - lines_bar.n)
+        # lines_bar.update(i - lines_bar.n)
 
     book.chapters.append(chapter)
+
+book.chapters.sort(key=lambda x:x.index)
+json.dump(asdict(book), open('demo.json', 'w', encoding='utf-8'), indent=2, ensure_ascii=False)
