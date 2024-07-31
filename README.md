@@ -52,6 +52,12 @@ chapters
 1. 请在issue中提供任何意见建议，不限于文本内容、文本格式、数据结构、数据分析、数据可视化等任何主题；
 2. 文本中有`[todo]`的地方为分析过程中发现的内容残缺的部分，可以参与校对和修复:D
 
+## 相关资源
+1. http://www.ziyexing.com/files-5/zizhitongjian/zizhitongjian_index.htm
+2. https://ctext.org/wiki.pl?if=gb&res=548761&remap=gb
+3. 卷28译文可参考：http://www.ziyexing.com/files-4/yywj-157.htm
+
+
 ## Star History
 
 [![Star History Chart](https://api.star-history.com/svg?repos=JY0284/zizhitongjian&type=Date)](https://star-history.com/#JY0284/zizhitongjian&Date)

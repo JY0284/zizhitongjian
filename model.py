@@ -9,7 +9,7 @@ from tqdm import tqdm
 PARA_IDX_PAT = re.compile("\[(\d+)\]")
 
 files = glob("chapters/*.md")
-
+cur_file = None
 
 @dataclass
 class CmpStr:
@@ -21,8 +21,12 @@ class CmpStr:
         found = re.findall(PARA_IDX_PAT, self.original)
         if found:
             found_trans = re.findall(PARA_IDX_PAT, self.translated)
-            assert ('[todo]' in self.translated) or found_trans and (found[0] == found_trans[0]), pformat([args, self])
-        
+            assert (
+                ("[todo]" in self.translated)
+                or found_trans
+                and (found[0] == found_trans[0])
+            ), pformat([args, self, f"{cur_file}:{self.line_num}"])
+
         return True
 
 
@@ -57,6 +61,7 @@ class Book:
 book = Book()
 pbar = tqdm(files[2:])
 for f in pbar:
+    cur_file = f
     pbar.set_description(f)
     lines = open(f, "r").readlines()
     chapter = Chapter()
