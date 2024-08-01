@@ -1,2 +1,9 @@
 [book]
+title = "资治通鉴-文白对照"
 src = "."
+
+[output.html]
+search = true
+
+[output.html.search]
+exclude = ["README.md"]
