@@ -1,7 +1,7 @@
 # 资治通鉴-文白对照-文本数据
 
 ## 文白对照阅读
-[阅读书籍点击](https://jy0284.github.io/zizhitongjian/)
+[阅读书籍点击](https://jy0284.github.io/zizhitongjian/chapters/001_资治通鉴第一卷(周纪).html)
 
 ## 简介
 项目地址：[zizhitongjian](https://github.com/JY0284/zizhitongjian)
