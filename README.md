@@ -45,6 +45,11 @@ chapters
 ## 抛砖引玉——资治通鉴数据应用样例（壹）：AI辅助理解可视化
 > 正在进行中。（[结构化数据使用样例](https://github.com/JY0284/zizhitongjian/blob/main/data_usage_demo_visualization.ipynb)）
 
+正在进行中的可视化Demo（使用GPT-O1与Deepseek-R1完成）：
+[![demo_1](https://github.com/JY0284/zizhitongjian/blob/main/周纪关系图.png)
+[![demo_2](https://github.com/JY0284/zizhitongjian/blob/main/history_relations.gv.png)
+[![demo_3](https://github.com/JY0284/zizhitongjian/blob/main/资治通鉴卷1-Seg1-实体关系图.png)
+
 ## 项目进展
 
 项目在持续更新，目前任务列表完成情况如下：
@@ -55,7 +60,7 @@ chapters
 - [x] 文本内容程序化校对，定位残缺和错误内容
 - [x] 文本数据结构化，便于利用数据分析工具和可视化工具进行处理
 - [x] 结构化数据使用样例
-- [ ] AI复制理解及可视化样例
+- [x] AI复制理解及可视化样例
 - [ ] 对话交互式资治通鉴
 - [ ] ...
 
