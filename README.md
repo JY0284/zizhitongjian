@@ -46,9 +46,9 @@ chapters
 > 正在进行中。（[结构化数据使用样例](https://github.com/JY0284/zizhitongjian/blob/main/data_usage_demo_visualization.ipynb)）
 
 正在进行中的可视化Demo（使用GPT-O1与Deepseek-R1完成）：
-[![demo_1](https://github.com/JY0284/zizhitongjian/blob/main/周纪关系图.png)
-[![demo_2](https://github.com/JY0284/zizhitongjian/blob/main/history_relations.gv.png)
-[![demo_3](https://github.com/JY0284/zizhitongjian/blob/main/资治通鉴卷1-Seg1-实体关系图.png)
+![demo_1](https://github.com/JY0284/zizhitongjian/blob/main/周纪关系图.png)
+![demo_2](https://github.com/JY0284/zizhitongjian/blob/main/history_relations.gv.png)
+![demo_3](https://github.com/JY0284/zizhitongjian/blob/main/资治通鉴卷1-Seg1-实体关系图.png)
 
 ## 项目进展
 
