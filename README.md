@@ -43,7 +43,9 @@ chapters
 结构化数据已由`model.py`生成，其中的数据结构及生成过程可见于`model.py`。结构化数据保存于`data.json`（[结构化数据文件](https://github.com/JY0284/zizhitongjian/blob/main/data.json)）。数据读取和使用样例请见`data_usage_demo_visualization.ipynb`（[结构化数据使用样例](https://github.com/JY0284/zizhitongjian/blob/main/data_usage_demo_visualization.ipynb)）。
 
 ## 抛砖引玉——资治通鉴数据应用样例（壹）：AI辅助理解可视化
-> 正在进行中。（[结构化数据使用样例](https://github.com/JY0284/zizhitongjian/blob/main/data_usage_demo_visualization.ipynb)）
+> 正在进行中。
+> [结构化数据使用样例](https://github.com/JY0284/zizhitongjian/blob/main/data_usage_demo_visualization.ipynb)
+> [AI辅助资治通鉴知识图谱挖掘&构建](https://github.com/JY0284/zizhitongjian/blob/main/extract_and_build_knowledge_graph.ipynb)
 
 正在进行中的可视化Demo（使用GPT-O1与Deepseek-R1完成）：
 ![demo_1](https://github.com/JY0284/zizhitongjian/blob/main/周纪关系图.png)
@@ -61,7 +63,7 @@ chapters
 - [x] 文本数据结构化，便于利用数据分析工具和可视化工具进行处理
 - [x] 结构化数据使用样例
 - [x] AI辅助理解及可视化样例
-- [ ] AI辅助获取全书知识图谱（人物、事件及其关系）
+- [ ] AI辅助获取全书知识图谱（人物、事件及其关系，以及在格式化数据中的精确定位）
 - [ ] 对话交互式资治通鉴
 - [ ] ...
 
