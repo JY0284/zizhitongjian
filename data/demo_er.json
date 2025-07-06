@@ -1,0 +1,306 @@
+{
+  "entities": [
+    {
+      "name": "周威烈王",
+      "alias": [
+        "姬午"
+      ],
+      "original_description_in_book": "初次分封晋国大夫魏斯、赵籍、韩虔为诸侯国君",
+      "llm_introduction": "周朝君主，分封晋国大夫为诸侯，标志战国时代的开始",
+      "power": "周朝"
+    },
+    {
+      "name": "魏斯",
+      "alias": [
+        "魏文侯"
+      ],
+      "original_description_in_book": "晋国大夫，被周威烈王分封为诸侯",
+      "llm_introduction": "魏国开国君主，以贤明著称，任用卜子夏、田子方等贤士",
+      "power": "魏国"
+    },
+    {
+      "name": "赵籍",
+      "alias": [
+        "赵烈侯"
+      ],
+      "original_description_in_book": "晋国大夫，被周威烈王分封为诸侯",
+      "llm_introduction": "赵国开国君主",
+      "power": "赵国"
+    },
+    {
+      "name": "韩虔",
+      "alias": [
+        "韩景侯"
+      ],
+      "original_description_in_book": "晋国大夫，被周威烈王分封为诸侯",
+      "llm_introduction": "韩国开国君主",
+      "power": "韩国"
+    },
+    {
+      "name": "司马光",
+      "alias": [],
+      "original_description_in_book": "臣司马光评论礼教与名分的重要性",
+      "llm_introduction": "北宋政治家、史学家，《资治通鉴》的主要编纂者",
+      "power": null
+    },
+    {
+      "name": "智宣子",
+      "alias": [],
+      "original_description_in_book": "想以智瑶为继承人",
+      "llm_introduction": "晋国智氏家族首领",
+      "power": "智氏家族"
+    },
+    {
+      "name": "智瑶",
+      "alias": [
+        "智襄子"
+      ],
+      "original_description_in_book": "智宣子之子，有五项长处但很不仁厚",
+      "llm_introduction": "晋国智氏家族首领，因才胜德导致家族灭亡",
+      "power": "智氏家族"
+    },
+    {
+      "name": "智果",
+      "alias": [
+        "辅果"
+      ],
+      "original_description_in_book": "智氏族人，反对立智瑶为继承人",
+      "llm_introduction": "智氏家族成员，因预见智瑶之祸而改姓辅氏",
+      "power": "智氏家族"
+    },
+    {
+      "name": "赵简子",
+      "alias": [],
+      "original_description_in_book": "赵国大夫，确定继承人赵无恤",
+      "llm_introduction": "赵国奠基人，为赵国的建立奠定基础",
+      "power": "赵国"
+    },
+    {
+      "name": "赵无恤",
+      "alias": [
+        "赵襄子"
+      ],
+      "original_description_in_book": "赵简子幼子，被立为继承人",
+      "llm_introduction": "赵国君主，在晋阳之战中击败智瑶",
+      "power": "赵国"
+    },
+    {
+      "name": "尹铎",
+      "alias": [],
+      "original_description_in_book": "赵简子派去晋阳的官员",
+      "llm_introduction": "赵国官员，治理晋阳有方",
+      "power": "赵国"
+    },
+    {
+      "name": "韩康子",
+      "alias": [],
+      "original_description_in_book": "韩氏家族首领，与智瑶、魏桓子围攻赵襄子",
+      "llm_introduction": "韩国君主，参与三家分晋",
+      "power": "韩国"
+    },
+    {
+      "name": "魏桓子",
+      "alias": [],
+      "original_description_in_book": "魏氏家族首领，与智瑶、韩康子围攻赵襄子",
+      "llm_introduction": "魏国君主，参与三家分晋",
+      "power": "魏国"
+    },
+    {
+      "name": "豫让",
+      "alias": [],
+      "original_description_in_book": "智瑶家臣，为主公报仇",
+      "llm_introduction": "义士，为报智瑶之仇多次刺杀赵襄子",
+      "power": null
+    },
+    {
+      "name": "吴起",
+      "alias": [],
+      "original_description_in_book": "卫国人，在鲁国、魏国、楚国任官",
+      "llm_introduction": "著名军事家、政治家，著有《吴子兵法》",
+      "power": "楚国"
+    },
+    {
+      "name": "楚悼王",
+      "alias": [],
+      "original_description_in_book": "楚国君主，任用吴起为相",
+      "llm_introduction": "楚国君主，支持吴起变法",
+      "power": "楚国"
+    },
+    {
+      "name": "齐威王",
+      "alias": [
+        "田因齐"
+      ],
+      "original_description_in_book": "齐国君主，烹杀阿地大夫",
+      "llm_introduction": "齐国君主，使齐国成为强国",
+      "power": "齐国"
+    },
+    {
+      "name": "田和",
+      "alias": [
+        "齐太公"
+      ],
+      "original_description_in_book": "齐国大夫，流放齐康公",
+      "llm_introduction": "田氏齐国开国君主",
+      "power": "齐国"
+    },
+    {
+      "name": "孔伋",
+      "alias": [
+        "子思"
+      ],
+      "original_description_in_book": "向卫国国君进言",
+      "llm_introduction": "孔子之孙，儒家代表人物",
+      "power": null
+    }
+  ],
+  "relations": [
+    {
+      "time": "前403年",
+      "from": [
+        "周威烈王"
+      ],
+      "to": [
+        "魏斯",
+        "赵籍",
+        "韩虔"
+      ],
+      "action": "分封",
+      "context": "周威烈王分封晋国大夫为诸侯，标志三家分晋",
+      "result": "魏、赵、韩成为诸侯国",
+      "event_name": "三家分晋",
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "司马光"
+      ],
+      "to": [
+        "周威烈王"
+      ],
+      "action": "评论",
+      "context": "司马光评论礼教与名分的重要性",
+      "result": "强调天子维护礼教的重要性",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "智宣子"
+      ],
+      "to": [
+        "智瑶"
+      ],
+      "action": "立为继承人",
+      "context": "智宣子想立智瑶为继承人",
+      "result": "智果反对并改姓辅氏",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "赵简子"
+      ],
+      "to": [
+        "赵无恤"
+      ],
+      "action": "立为继承人",
+      "context": "赵简子通过测试确定继承人",
+      "result": "赵无恤被立为继承人",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "智瑶"
+      ],
+      "to": [
+        "韩康子",
+        "魏桓子",
+        "赵无恤"
+      ],
+      "action": "索地",
+      "context": "智瑶向韩、魏、赵索要土地",
+      "result": "韩、魏给地，赵拒绝",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": "前453年",
+      "from": [
+        "智瑶",
+        "韩康子",
+        "魏桓子"
+      ],
+      "to": [
+        "赵无恤"
+      ],
+      "action": "围攻",
+      "context": "智瑶联合韩、魏围攻赵无恤于晋阳",
+      "result": "韩、魏倒戈，智氏灭亡",
+      "event_name": "晋阳之战",
+      "location": "晋阳"
+    },
+    {
+      "time": null,
+      "from": [
+        "豫让"
+      ],
+      "to": [
+        "赵无恤"
+      ],
+      "action": "刺杀",
+      "context": "豫让为智瑶报仇多次刺杀赵无恤",
+      "result": "豫让被杀",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "吴起"
+      ],
+      "to": [
+        "楚悼王"
+      ],
+      "action": "任相",
+      "context": "楚悼王任用吴起为相",
+      "result": "楚国强大",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "齐威王"
+      ],
+      "to": [
+        "即墨大夫",
+        "阿地大夫"
+      ],
+      "action": "赏罚",
+      "context": "齐威王赏即墨大夫，烹阿地大夫",
+      "result": "齐国大治",
+      "event_name": null,
+      "location": null
+    },
+    {
+      "time": null,
+      "from": [
+        "孔伋"
+      ],
+      "to": [
+        "卫侯"
+      ],
+      "action": "进言",
+      "context": "孔伋向卫侯进言用人治国之道",
+      "result": "卫侯接受指教",
+      "event_name": null,
+      "location": null
+    }
+  ]
+}
