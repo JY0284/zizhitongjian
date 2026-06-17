@@ -1,40 +1,40 @@
-# Data Pipeline Design (V1)
+# 数据流水线设计（V1）
 
-> Foundation for UX v1 (global context, time filtering, map mode).
-> Created at: 2026/01/17
+> 支撑第一版交互体验：全局上下文、时间筛选、地图模式。
+> 创建时间：2026/01/17
 
-## Goals
+## 目标
 
-- Produce a **deterministic, versioned** knowledge base for visualization/search.
-- Guarantee **global time navigation** by providing numeric years (year-based) even when extraction text is incomplete.
-- Enable geography/map view by enriching unified locations with **WGS84 coordinates** stored as **`[lng, lat]`**.
-- Support **incremental builds** (re-run only what changed) with caching and manual overrides.
+- 生成确定、可版本化的知识库，供可视化和检索使用。
+- 即使抽取文本里的时间不完整，也能用数值年份支持全局时间导航。
+- 为统一地点补全 WGS84 坐标，坐标统一保存为 `[lng, lat]`。
+- 支持增量构建：只重跑变化部分，缓存自动保留，人工修正可覆盖自动结果。
 
-## Scope (V1)
+## 范围（V1）
 
-- Time is **year-based only**.
-- Treat years as **BCE (negative)** until a configured cutoff year (see Time Canonicalization).
-- Geocoding runs **on unified locations** (stable IDs), using **Amap** as the primary provider.
+- 时间粒度只做到“年”。
+- 公元前年份使用负数表示。
+- 地理编码只对统一后的地点运行，主服务商为高德（Amap）。
 
-## Inputs
+## 输入
 
 - `adapted_book.json`
-  - Canonical segmented text.
-  - Each segment includes `segment_start_time` string (often includes an explicit year like `（…、前295）`).
+  - 已分段的标准书籍文本。
+  - 每个段落包含 `segment_start_time`，通常带有明确年份，例如 `（...、前295）`。
 - `data/store/juan_*.json`
-  - Per-chunk extraction outputs (via `KnowledgeStore`).
+  - LLM 按卷/分块抽取后的缓存结果，由 `KnowledgeStore` 写入。
 
-## Core Outputs (Artifacts)
+## 核心产物
 
-### 1) Segment Year Index (first-class)
+### 1. 段落年份索引
 
-- File: `data/segment_year_index.json`
-- Key: `(juan_index, segment_index)`
-- Purpose:
-  - Canonical numeric year per segment for time filtering and imputation.
-  - Derive `juan_start_year` reliably.
+- 文件：`data/segment_year_index.json`
+- 键：`(juan_index, segment_index)`，实际写作 `${juan_index}-${segment_index}`
+- 用途：
+  - 为每个段落提供标准数值年份，支持时间筛选和缺失时间补全。
+  - 稳定推导每卷起始年份。
 
-Schema (suggested):
+示例结构：
 
 ```json
 {
@@ -54,17 +54,12 @@ Schema (suggested):
 }
 ```
 
-Notes (canonical V1):
+规则：
 
-- Key format is `${juan_index}-${segment_index}`.
-- `year` may be `null` when parsing fails; then `parse_method=null` and `confidence=0.0`.
-- Optional manual fixes live in `data/segment_year_overrides.json` and are applied by `scripts/build_segment_year_index.py --overrides ...`.
+- 解析失败时 `year` 为 `null`，`parse_method` 为 `null`，`confidence` 为 `0.0`。
+- 人工修正放在 `data/segment_year_overrides.json`，由 `scripts/build_segment_year_index.py --overrides ...` 应用。
 
-#### Segment Year Overrides (optional but supported)
-
-- File: `data/segment_year_overrides.json`
-
-Schema (canonical V1):
+人工修正示例：
 
 ```json
 {
@@ -79,13 +74,12 @@ Schema (canonical V1):
 }
 ```
 
-### 2) Juan Year Index
+### 2. 卷起始年份索引
 
-- File: `data/juan_year_index.json`
-- Purpose:
-  - Quick mapping for UX global context syncing between `juanRange` and `yearRange`.
+- 文件：`data/juan_year_index.json`
+- 用途：让前端能在卷范围 `juanRange` 与年份范围 `yearRange` 之间做联动。
 
-Schema (suggested):
+示例结构：
 
 ```json
 {
@@ -98,26 +92,26 @@ Schema (suggested):
 }
 ```
 
-### 3) Unified Knowledge Base (enriched)
+### 3. 统一知识库
 
-- File: `data/unified_knowledge.json`
-- Additions required for UX v1:
-  - Relations numeric years:
+- 文件：`data/unified_knowledge.json`
+- V1 需要补充的字段：
+  - 关系年份：
     - `first_interaction_year: number | null`
     - `last_interaction_year: number | null`
-  - (Optional but recommended) Events imputed year fields if `time_start` is null:
+  - 事件缺失时间时的补全年份：
     - `imputed_time_start: number | null`
     - `imputed_time_end: number | null`
 
-### 4) Geocoding Cache (unified locations)
+### 4. 地理编码缓存
 
-- File: `data/location_geocoding.json`
-- Key: `location_id` (use unified location `id` / `canonical_name`)
-- Coordinates standard:
+- 文件：`data/location_geocoding.json`
+- 键：统一地点的 `id` 或 `canonical_name`
+- 坐标标准：
   - WGS84
-  - JSON representation: **`[lng, lat]`**
+  - JSON 中统一写作 `[lng, lat]`
 
-Schema (suggested):
+示例结构：
 
 ```json
 {
@@ -147,147 +141,119 @@ Schema (suggested):
 }
 ```
 
-Notes (canonical V1):
+规则：
 
-- Coordinates are always **WGS84** and ordered as **`[lng, lat]`**.
-- When `needs_review=true`, `coordinates` SHOULD be `null` (non-authoritative); optional fields may be recorded:
-  - `candidate_coordinates: [lng, lat] | null`
-  - `candidate_count: number | null`
-  - `info`, `infocode`
+- `coordinates` 永远是 WGS84，顺序永远是 `[lng, lat]`。
+- 当 `needs_review=true` 时，`coordinates` 应保持为 `null`，避免把不确定坐标当成权威结果。可选记录：
+  - `candidate_coordinates`
+  - `candidate_count`
+  - `info`
+  - `infocode`
   - `attempts`
 
-## Pipeline Stages
-
-### Canonical Local Build Order
+## 本地构建顺序
 
 1. `uv run python scripts/build_segment_year_index.py --overrides data/segment_year_overrides.json`
 2. `uv run python scripts/build_juan_year_index.py`
 3. `uv run python entity_resolution.py --store-dir data/store --output data/unified_knowledge.json`
-4. Optional: `uv run python scripts/geocode_locations_amap.py`
-5. Optional: `uv run python scripts/merge_geocoding_into_unified_kb.py`
+4. 可选：`uv run python scripts/geocode_locations_amap.py`
+5. 可选：`uv run python scripts/merge_geocoding_into_unified_kb.py`
 6. `uv run python scripts/validate_artifacts.py`
-7. Publish selected runtime artifacts into `visualization/public/data/`
+7. 把前端需要的运行时数据发布到 `visualization/public/data/`
 
-Step 3 requires `data/store/juan_*.json`, generated by the LLM extraction stage. Those files are generated artifacts and may be absent in a clean checkout.
+第 3 步依赖 `data/store/juan_*.json`。这些文件由 LLM 抽取阶段生成，干净检出仓库后可能不存在。
 
-### Stage A — Extract (LLM)
+## 阶段说明
 
-- Script: `knowledge_extraction.py`
-- Reads: `adapted_book.json`
-- Writes: `data/store/juan_*.json`
+### A. LLM 抽取
 
-Notes:
+- 脚本：`knowledge_extraction.py`
+- 读取：`adapted_book.json`
+- 写入：`data/store/juan_*.json`
 
-- Extraction prompt currently does **not** output coordinates. Coordinates must be handled by a dedicated geocoding stage.
+说明：抽取提示词不负责输出坐标，坐标统一交给地理编码阶段处理。
 
-### Stage B — Build Segment Year Index (deterministic)
+### B. 构建段落年份索引
 
-- Input: `adapted_book.json` (preferred) and/or `data/store/juan_*.json` (`segment_start_time` copy)
-- Output: `data/segment_year_index.json`
+- 输入：优先使用 `adapted_book.json`，也可以从 `data/store/juan_*.json` 读取 `segment_start_time`
+- 输出：`data/segment_year_index.json`
 
-Parsing to numeric year:
+解析规则：
 
-- Extract numeric year from `segment_start_time_raw` using deterministic regex.
-- V1 rule:
-  - If explicitly marked as BCE (`公元前NNN` / `前NNN`) → `year = -NNN`
-  - If explicitly marked as CE (`公元NNN`) → `year = +NNN`
-  - Parenthesized numeric years like `（...、116）` are treated as **CE by default** with `confidence < 1.0`.
-    - Policy knob: set `cutoff_year` so that if an ambiguous parsed year $N \le cutoff\_year$, it is treated as BCE (`-N`).
-    - Default `cutoff_year = -1` keeps all ambiguous parenthesized years as CE.
+1. `公元前(\d+)` -> `year = -N`
+2. `前(\d+)` -> `year = -N`
+3. `公元(\d+)` -> `year = +N`
+4. `（...、(\d{1,4})）` 或 ASCII 括号形式 -> 默认 `year = +N`
 
-Suggested parsing order:
+质量约束：
 
-1. `公元前(\d+)` → `year = -N`
-2. `前(\d+)` → `year = -N`
-3. (Optional) if segment explicitly contains `公元(\d+)` → `year = +N`
-4. `（...、(\d{1,4})）` (or ASCII parentheses) → `year = +N` (or `-N` if `N <= cutoff_year`)
+- 同一卷内，年份应随段落索引非递减。
+- 跨卷时，卷起始年份应符合《资治通鉴》的整体时间顺序。
+- 违反约束的案例进入人工修正文件，而不是在代码中写死。
 
-Failure behavior (canonical V1):
+### C. 构建卷起始年份索引
 
-- If no supported format matches, the segment year is recorded as `null`.
-- In `data/segment_year_index.json`, this is represented as:
-  - `year: null`, `parse_method: null`, `confidence: 0.0`
+- 输入：`data/segment_year_index.json`
+- 输出：`data/juan_year_index.json`
 
-Quality constraints:
+规则：
 
-- Within a juan: `year` should be non-decreasing by `segment_index`.
-- Across juans: `juan_start_year` must follow the known sequential-on-year invariant.
-- Violations are flagged for manual correction (in a small overrides file).
+- 优先取 `(juan, segment=1)` 的年份。
+- 若首段年份缺失，则退回取该卷所有段落中的最小可用年份。
 
-### Stage C — Build Juan Year Index
+### D. 实体融合与统一知识库
 
-- Input: `data/segment_year_index.json`
-- Output: `data/juan_year_index.json`
+- 脚本：`entity_resolution.py`
+- 读取：`data/store/juan_*.json`
+- 写入：`data/unified_knowledge.json`
 
-Rule:
+补全规则：
 
-- `juan_start_year[juan] = year of (juan, segment=1)` if present.
-- Fallback: minimum year among segments in the juan.
+- 事件：
+  - 能从 `event.time` 解析出年份时，保留为 `time_start`。
+  - 无法解析时，根据事件出现的卷/段，从段落年份索引补出候选年份。
+- 关系：
+  - 优先解析 `action.time`。
+  - 解析失败时，通过每个动作的 `(juan_index, segment_index)` 查段落年份。
+  - 统一关系上聚合出 `first_interaction_year` 与 `last_interaction_year`。
 
-### Stage D — Resolve & Unify
+### E. 地点地理编码
 
-- Script: `entity_resolution.py`
-- Reads: `data/store/juan_*.json`
-- Writes: `data/unified_knowledge.json`
+- 输入：`data/unified_knowledge.json` 中的地点
+- 输出：`data/location_geocoding.json`
 
-V1 enrichment during/after unification:
+配置：
 
-- **Events**:
-  - Keep `time_start` parsed from `event.time` when available.
-  - If missing, impute from segment year index:
-    - For each unified event occurrence (juan/segment), derive candidate year from `segment_year_index`.
-    - Set `imputed_time_start = min(candidate_years)`.
-- **Relations**:
-  - Prefer parsing `action.time` (string) when available.
-  - Otherwise derive numeric years from the segment year index via each action’s `(juan_index, segment_index)`.
-  - Aggregate into unified relation numeric span:
-    - `first_interaction_year = min(years)`
-    - `last_interaction_year = max(years)`
+- 从 `.env.sample` 复制 `.env`，填入 `AMAP_KEY`。
 
-### Stage E — Geocode Unified Locations (Amap)
+脚本：
 
-- Input: `data/unified_knowledge.json` locations
-- Output: `data/location_geocoding.json`
+- 生成或更新缓存：`uv run python scripts/geocode_locations_amap.py`
+- 回填统一知识库：`uv run python scripts/merge_geocoding_into_unified_kb.py`
 
-Config:
+流程：
 
-- Create `.env` from `.env.sample` and set `AMAP_KEY`.
+- 每个统一地点生成查询词，优先使用 `modern_name`，否则使用 `canonical_name`。
+- 调用高德地理编码接口。
+- 归一化为 `[lng, lat]`。
+- 多候选、低置信度或位置明显不合理时标记 `needs_review`。
+- 人工覆盖始终在最后应用。
 
-Scripts:
+前端只读取回填后的统一知识库，不直接调用 LLM 或地理编码服务。
 
-- Generate/update cache: `uv run python scripts/geocode_locations_amap.py`
-- Merge into unified KB: `uv run python scripts/merge_geocoding_into_unified_kb.py`
+## 版本与增量构建
 
-Process:
-
-- For each unified location:
-  - Generate a query string, prefer `modern_name` if present, else `canonical_name`.
-  - Call Amap geocoding API.
-  - Normalize and store result as `[lng, lat]`.
-  - Record `confidence` and `needs_review` when:
-    - multiple candidates returned
-    - result is far from expected region (if available)
-    - low match score
-- Apply manual overrides as the final step.
-
-Integration:
-
-- Merge geocoding cache back into `data/unified_knowledge.json` by filling `locations[*].coordinates`.
-- Frontend consumes only the enriched unified KB; it never calls geocoding/LLM.
-
-## Versioning & Incremental Builds
-
-- Every artifact includes:
+- 每个产物包含：
   - `version`
   - `generated_at`
-  - input hashes (optional V1)
-- Incremental strategy:
-  - Extraction is already incremental by chunk key in `KnowledgeStore`.
-  - Segment year index is deterministic and can be recomputed cheaply.
-  - Geocoding cache is append/update-only; it should never wipe existing manual overrides.
+  - 输入哈希（V1 可选）
+- 增量策略：
+  - LLM 抽取已通过 `KnowledgeStore` 按分块缓存。
+  - 段落年份索引是确定性产物，可以低成本重算。
+  - 地理编码缓存只追加或更新，不应清空已有人工修正。
 
-## Open Issues / Decisions (for V2)
+## V2 待决问题
 
-- BCE/CE cutoff policy: handling `公元` years and mixed notation robustly.
-- Disambiguation for historical toponyms: region constraints, dynasty context, and multi-candidate selection heuristics.
-- Coordinates precision vs historical accuracy (ancient vs modern location).
+- 更稳健地处理公元/公元前混合记法。
+- 历史地名消歧：结合朝代、区域约束和多候选排序。
+- 坐标准确性：现代坐标与古地理位置之间需要明确标注差异。

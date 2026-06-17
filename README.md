@@ -115,21 +115,21 @@ npm install
 npm run dev
 ```
 
-## Local Development
+## 本地开发
 
-This repository has two layers:
+这个仓库主要分为两层：
 
-1. Corpus and pipeline: Markdown chapters, structured book JSON, extraction models, and artifact builders.
-2. Visualization: a React app that reads generated runtime JSON from `visualization/public/data/`.
+1. 文本与数据流水线：Markdown 卷册、结构化书籍 JSON、抽取模型、数据产物构建脚本。
+2. 可视化前端：位于 `visualization/`，读取 `visualization/public/data/` 中的运行时 JSON。
 
-### Python checks
+### Python 检查
 
 ```bash
 uv run pytest -q
 uv run python scripts/validate_segment_year_index.py --fail
 ```
 
-### Frontend checks
+### 前端检查
 
 ```bash
 cd visualization
@@ -137,24 +137,24 @@ npm install
 npm run build
 ```
 
-### Runtime data
+### 运行时数据
 
-The visualization expects:
+前端需要以下文件：
 
 - `visualization/public/data/unified_knowledge.json`
 - `visualization/public/data/juan_year_index.json`
 
-These files are generated artifacts and may be absent in a clean checkout. If they are not present, build or copy them from the pipeline output before starting the frontend.
+这些文件是生成产物，干净检出仓库后可能不存在。启动前端前，请先通过数据流水线生成，或从流水线输出中复制到前端运行时目录。
 
-### Local API keys
+### 本地 API 密钥
 
-Local secrets live in ignored `.env`. Copy `.env.sample` to `.env` for local-only configuration:
+本地密钥只放在被忽略的 `.env` 中。复制 `.env.sample` 为 `.env` 后再填写本机配置：
 
 ```bash
 cp .env.sample .env
 ```
 
-Set `DEEPSEEK_API_KEY` only when running LLM extraction. `knowledge_extraction.py` reads process environment variables, so export the file before running extraction:
+只有运行 LLM 抽取时才需要设置 `DEEPSEEK_API_KEY`。`knowledge_extraction.py` 从进程环境变量读取配置，运行前先导出 `.env`：
 
 ```bash
 set -a
@@ -162,9 +162,9 @@ source .env
 set +a
 ```
 
-Set `AMAP_KEY` only when running geocoding. The geocoding script loads `.env` automatically. Never commit `.env`.
+只有运行地理编码时才需要设置 `AMAP_KEY`。地理编码脚本会自动加载 `.env`。不要提交 `.env`。
 
-The default extraction model is `deepseek-v4-flash`. Set `DEEPSEEK_MODEL=deepseek-v4-pro` for reasoning-heavy extraction passes.
+默认抽取模型是 `deepseek-v4-flash`。需要更强推理能力时，将 `DEEPSEEK_MODEL` 设为 `deepseek-v4-pro`。
 
 ## 技术实现简述
 

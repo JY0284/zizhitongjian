@@ -1,271 +1,253 @@
-# UI Design
+# UI 设计
 
-> This doc illustrates the design of the interactive graphical user interface.
-> Created at: 2026/01/17
+> 说明交互式历史可视化界面的核心设计。
+> 创建时间：2026/01/17
 
-## Goal
+## 目标
 
-Our goal is to let human could easily read a book(especially historical book for now) with many events/locations/roles/timeline in a interactive and visual way. Via our service, the readers get more knowledge in more dimensions in a more fantastic and attractive way with even less time cost.
+这个项目要做的是：让读者用更直观的方式阅读历史、理解历史，而不只是顺序翻页。界面需要把《资治通鉴》中的事件、人物、地点、势力、关系和时间放在同一个可探索的系统里，让读者能从时间线、地图和关系网络之间来回穿梭。
 
-## Scope (V1)
+核心目标不是炫技，而是帮助人更快形成历史上下文：谁和谁有关、事情发生在哪里、时间如何推进、一个选择怎样影响后续事件。
 
-- Time is **year-based only** (using numeric year, BCE as negative).
-- The selection of **juan range + year range is the global context** shared by all views.
-- Geography view must support both:
-	- A location-centric experience even when coordinates are missing.
-	- A map mode once coordinates are available (via a data pipeline).
+## 范围（V1）
 
-## Overview
+- 时间粒度只做到“年”，公元前年份用负数表示。
+- 全局上下文由“卷范围 + 年份范围 + 当前选中对象”组成，所有视图共享。
+- 地理视图需要同时支持：
+  - 无坐标时的地点列表与详情模式。
+  - 有坐标后的地图模式。
 
-we have these elements(ref.data/unified_knowledge.json):
-1. event
-2. role
-3. power
-4. location
-5. relation
-6. time
+## 核心对象
 
-We are going to demonstrate these all in our service. Each of the element has the relation to other elements, this should be represented in the interface.
+统一知识库 `data/unified_knowledge.json` 中的主要对象包括：
 
-## System Model
+1. 事件
+2. 人物
+3. 势力
+4. 地点
+5. 关系
+6. 时间
 
-### Global Context (single source of truth)
+界面要展示这些对象，也要展示它们之间的连接。用户不应该只看到孤立卡片，而应该能从一个对象跳到相关对象。
 
-Global Context is the shared state that all views read from and write to:
+## 系统模型
+
+### 全局上下文
+
+全局上下文是所有视图共同读写的状态：
 
 - `juanRange`: `[startJuan, endJuan]`
-- `yearRange`: `[startYear, endYear]` (both nullable; year-based only; BCE is negative)
-- `selection`: optional selected entity (event/role/location/relation)
+- `yearRange`: `[startYear, endYear]`
+- `selection`: 当前选中的事件、人物、地点或关系
 
-Rules:
+规则：
 
-- Any view can update the Global Context.
-- All views must reflect the Global Context consistently.
+- 任意视图都可以更新全局上下文。
+- 所有视图必须同步反映当前上下文。
+- URL 应能表示全局上下文，方便分享、刷新恢复和浏览器前进/后退。
 
-### Interaction Contract (consistent everywhere)
+### 统一交互契约
 
-One interaction pattern across all views:
+所有视图尽量遵循同一套交互：
 
-1. **Select**: user clicks an entity (event/role/location/relation).
-2. **Inspect**: show a consistent entity detail (modal/panel).
-3. **Jump**: user clicks a linked entity from the detail; the app updates Global Context and (if needed) switches to the most relevant view.
+1. 选择：用户点击事件、人物、地点或关系。
+2. 查看：打开统一风格的详情面板或弹窗。
+3. 跳转：用户点击详情中的关联对象，系统更新全局上下文，并切换到最合适的视图。
 
-"Jump" is the primary way users traverse the knowledge graph without losing reading context.
+“跳转”是用户穿行知识图谱的主要方式。它必须保留阅读上下文，不能让用户迷路。
 
-### Context Navigation (Back/Forward)
+### 历史导航
 
-Because Global Context changes as users select/jump across entities and views, the system must support easy back/forward traversal of context, similar to a browser.
+全局上下文变化后，浏览器前进/后退应像阅读路径一样可用。
 
-V1 requirements:
+需要进入 URL 的状态：
 
-- Global Context must be **URL-addressable** (e.g. query params), so context can be:
-	- navigated via browser Back/Forward
-	- shared/bookmarked
-	- restored on refresh
-- Each meaningful context change must create a history entry:
-	- Tab switch
-	- Global filter changes (`juanRange`, `yearRange`) when the user commits the change
-	- Jump actions (entity-to-entity navigation)
+- 当前 tab
+- `juanRange`
+- `yearRange`
+- 当前聚焦或选中的对象 id
 
-History update policy:
+不需要进入 URL 的临时状态：
 
-- Use **replace** for high-frequency intermediate states (e.g. while dragging/zooming).
-- Use **push** only on commit (e.g. mouseup / enter / blur) to avoid flooding history.
+- hover 状态
+- tooltip 是否显示
+- 拖拽中的中间缩放状态
 
-What is included in context navigation:
+更新策略：
 
-- `tab`
-- `juanRange`, `yearRange`
-- focus/selection identifiers (e.g. focused role id)
+- 高频中间态使用 `replace`。
+- 用户提交后的状态使用 `push`，例如松开鼠标、回车、失焦或点击跳转。
 
-What is excluded (transient UI state):
+## 时间/卷视图
 
-- hover state
-- tooltip visibility
-- intermediate zoom transforms unless explicitly treated as a committed navigation
+### 范围选择
 
-## View Based on Time/Book(linear)
+用户可以通过两个维度限定阅读范围：
 
-### How do users select content(time/book) display range?
+- `juanRange` 控制书籍卷范围。
+- `yearRange` 控制年份范围。
 
-Use global filters:
+二者都是全局上下文，必须影响所有 tab。
 
-- `juanRange` controls which parts of the book are in scope.
-- `yearRange` controls which years are in scope.
+### 事件展示
 
-Both filters are global context and must affect all tabs.
+问题：
 
-### Events display
+1. 同一年可能有大量事件，时间标签稀疏但事件密集。
+2. 事件详情里的人物、势力、地点需要能继续探索。
 
-problems:
-1. time label is sparse, but events are dense at some singe time points, how to show many events in one time point in a user friendly way?
-2. how do we show related roles/power... in an event? How do users interact with these elements to get more dimensional knowledge? 
+V1 方案：
 
-V1 design decisions:
+- 时间线保持线性结构。
+- 事件密集时使用聚合，并提供展开动作。
+- 事件详情至少展示：
+  - 年份或时间文本
+  - 地点
+  - 参与者
+  - 描述
+  - 背景或历史意义（如果数据中存在）
+- 参与者、地点和相关对象可以点击跳转。
 
-- Keep a linear timeline with **clustering** for dense events and an **expand** action for clusters.
-- Event detail must show at least:
-	- year/time label
-	- location (if available)
-	- participants
-	- description (+ significance/background when available)
-- Participants and related entities in the detail must be clickable and support **Jump**:
-	- Clicking a participant jumps to the network view and focuses that role.
+缺失时间处理：
 
-Unknown/nullable time handling:
+- `time_start = null` 的事件不能破坏筛选。
+- 这类事件应放入“时间未知”分组，或以明确方式与年份筛选结果区分。
 
-- If an event has `time_start = null`, it should not break filtering.
-- It should be shown in a clear "Unknown time" grouping or otherwise clearly separated from year-filtered events (implementation choice), so users understand why it appears.
+## 地理/地图视图
 
-## View Based on Geography/Map
+地理视图需要把地点从“文本里的名字”变成“可以探索的历史空间”。
 
-### All entities should have a way to display on a map
+V1 支持两种模式：
 
-### We can see a entity's location transferring on a map
+- 地点列表模式：不依赖坐标，展示地点、相关人物和相关事件。
+- 地图模式：有坐标时在地图上展示地点；没有坐标的地点仍保留在列表中。
 
-V1 model:
+地图规则：
 
-- The geography tab supports two modes:
-	- **Location-centric mode (no coordinates required)**: list + detail, driven by Global Context.
-	- **Map mode (coordinates required)**: plot locations with coordinates; list remains available for missing coordinates.
+- 只展示当前全局上下文内相关的地点。
+- 坐标缺失时不能出现空白页。
+- 地点详情中应能跳转到相关事件或人物。
 
-Map requirements:
+轨迹能力（V1 最小形态）：
 
-- Only show locations relevant to the current Global Context.
-- Map must gracefully handle missing coordinates:
-	- Locations without coordinates remain visible in list mode.
+- 对选中的人物、事件或势力，如果相关事件同时具备年份和坐标，可以按时间展示地点序列。
+- 数据不满足时，应明确说明为什么没有轨迹，而不是静默不显示。
 
-Entity trajectory (V1 minimal):
+## 搜索
 
-- For a selected entity (role/event/power), show a "trajectory" as a sequence of event locations over time, only when:
-	- events have `time_start` (year), and
-	- locations have coordinates.
+搜索应作为全局入口，返回混合类型结果：
 
-## Search(event, time, roles like anything that could be searched)
+- 人物
+- 地点
+- 事件
 
-V1 design:
+选择搜索结果后：
 
-- Provide a single global search entry that returns mixed entity types:
-	- role / location / event
-- Selecting a result should:
-	- open the entity detail (Inspect)
-	- optionally Jump to the best view:
-		- role -> network (focus the node)
-		- event -> timeline
-		- location -> geography
+- 打开对象详情。
+- 必要时切换到最合适的视图：
+  - 人物 -> 关系网络
+  - 事件 -> 时间线
+  - 地点 -> 地理视图
 
-## View-by-view Rules (V1)
+## 各视图规则
 
-### Timeline tab
+### 时间线
 
-- Input: Global Context (`juanRange`, `yearRange`).
-- Output: events filtered by both ranges.
-- Interaction:
-	- click event -> Inspect (event detail)
-	- click participant in detail -> Jump to network + focus
+- 输入：全局上下文 `juanRange`、`yearRange`
+- 输出：同时满足卷范围和年份范围的事件
+- 交互：
+  - 点击事件 -> 查看事件详情
+  - 点击参与者 -> 跳转到关系网络并聚焦人物
 
-### Network tab
+### 关系网络
 
-- Input: Global Context (`juanRange`, `yearRange`).
-- Output: role graph where edges and nodes are consistent with the selected ranges.
-- Filtering policy:
-	- `juanRange` filters relations by source juans.
-	- `yearRange` filters relations by numeric year (requires relation-year fields in data).
-	- Nodes are included if they participate in at least one in-range relation.
+- 输入：全局上下文 `juanRange`、`yearRange`
+- 输出：符合范围的关系边，以及由这些边连接出来的人物节点
+- 筛选策略：
+  - `juanRange` 按关系来源卷筛选。
+  - `yearRange` 按关系数值年份筛选。
+  - 没有任何范围内关系的人物不显示。
 
-### Locations tab
+### 地点
 
-- Input: Global Context (`juanRange`, `yearRange`).
-- Output:
-	- list of relevant locations
-	- detail shows related roles and related events within context
-- Map mode (when coordinates exist): plot only in-range locations with coordinates.
+- 输入：全局上下文 `juanRange`、`yearRange`
+- 输出：
+  - 相关地点列表
+  - 地点详情中的相关人物与事件
+- 地图模式只绘制有坐标的地点，无坐标地点仍保留在列表中。
 
-### Power tab
+### 势力
 
-- Input: Global Context (`juanRange`, `yearRange`).
-- Output: power distribution within context.
-- If time evidence for power membership is incomplete, fall back to `juanRange` only and label it clearly.
+- 输入：全局上下文 `juanRange`、`yearRange`
+- 输出：上下文范围内的势力分布
+- 如果势力归属缺少可靠时间证据，先退回按卷范围统计，并在界面中清楚标注。
 
-## Data & Pipeline Requirements
+## 数据要求
 
-### Year-based time
+### 年份
 
-- Events must have numeric year for filtering:
-	- `events[*].time_start: number | null`
-- Relations should also have numeric years to support global filtering in the network view:
-	- add `relations[*].first_interaction_year: number | null`
-	- add `relations[*].last_interaction_year: number | null`
+事件需要有可筛选的数值年份：
 
-#### Juan-year mapping (important invariant)
+- `events[*].time_start: number | null`
 
-Fact:
+关系也需要有数值年份，支持关系网络按时间过滤：
 
-- Each juan has a clear **start year**.
-- Juans are **sequential on year** (juan index order follows time order).
+- `relations[*].first_interaction_year: number | null`
+- `relations[*].last_interaction_year: number | null`
 
-Implications (V1):
+### 卷与年份映射
 
-- The system should maintain a canonical mapping:
-	- `juan_start_year[juan_index] = year`
-- Global Context can support two linked time selectors:
-	- a `juanRange` selector
-	- a `yearRange` selector
+事实：
 
-Sync rules (recommended):
+- 每一卷都有较明确的起始年份。
+- 卷序大体跟随时间推进。
 
-- When user changes `juanRange`, the UI can offer (or default to) updating `yearRange` to the span implied by the selected juans.
-- When user changes `yearRange`, the UI can offer (or default to) updating `juanRange` to the minimal set of juans covering that year span.
+因此系统需要维护：
 
-Deriving years from juans:
+- `juan_start_year[juan_index] = year`
 
-- If an event has `time_start = null`, it may be assigned an **imputed year range** based on its `source_juans`:
-	- `imputed_start_year = min(juan_start_year[source_juan])`
-	- `imputed_end_year = max(juan_start_year[source_juan] + juan_year_span_estimate)` (span can be 0 if unknown)
-- Relations can similarly derive numeric years if missing:
-	- `first_interaction_year = min(juan_start_year[source_juan])`
-	- `last_interaction_year = max(juan_start_year[source_juan] + juan_year_span_estimate)`
+联动规则：
 
-Note:
+- 用户修改卷范围时，可以同步或提示同步年份范围。
+- 用户修改年份范围时，可以同步或提示同步覆盖这些年份的最小卷范围。
 
-- If we do not model per-juan year span yet, V1 can conservatively treat each juan as a single-year anchor (span=0). This still enables consistent global time filtering and navigation, with a clear accuracy tradeoff.
+缺失年份补全：
 
-### Coordinates for map
+- 事件缺少 `time_start` 时，可根据 `source_juans` 推导 `imputed_start_year` 和 `imputed_end_year`。
+- 关系缺少年份时，可根据来源卷或来源段落推导 `first_interaction_year` 与 `last_interaction_year`。
+- V1 可以先把每卷当作单年锚点处理，准确性不足处在数据层标注。
 
-Most `locations[*].coordinates` are currently null; map mode depends on a data pipeline.
+### 地图坐标
 
-Proposed pipeline artifact (versioned, deterministic, and override-friendly):
+地图依赖地点坐标。坐标产物为：
 
-- `data/location_geocoding.json` (or similar), keyed by location `id` or `canonical_name`:
-	- `canonical_name`
-	- `modern_name` (normalized)
-	- `coordinates: [lng, lat] | null`
-	- `confidence` (e.g. 0-1)
-	- `evidence` (short justification / references used)
-	- `source` (LLM/manual)
-	- optional `notes` / manual overrides
+- `data/location_geocoding.json`
 
-Integration rule:
+字段包括：
 
-- Unification should fill `UnifiedLocation.coordinates` from this artifact, so the frontend never calls LLM.
+- `canonical_name`
+- `modern_name`
+- `coordinates: [lng, lat] | null`
+- `confidence`
+- `evidence`
+- `source`
+- `notes` 或人工覆盖信息
 
-### Linking data to reading context
+统一知识库应从该产物回填 `UnifiedLocation.coordinates`，前端不直接调用 LLM 或地理编码服务。
 
-- Ensure each entity maintains enough provenance to connect back to the book:
-	- events: `source_juans` (already exists)
-	- relations: `source_juans` (already exists)
-	- roles/locations: `occurrences` with `juan_index` (already exists)
+### 回到文本上下文
 
-This provenance is what makes Global Context filtering and "Jump" behavior reliable.
+每个对象都应保留足够来源信息，方便回到原书：
 
-## TODO
+- 事件：`source_juans`
+- 关系：`source_juans`
+- 人物/地点：带 `juan_index` 的出现记录
 
-- [ ] Make Global Context URL-addressable (`tab`, `juanRange`, `yearRange`, focus/selection)
-- [ ] Add history push/replace rules (debounce/commit semantics) for context changes
-- [ ] Apply `yearRange` filtering to network (requires relation numeric years)
-- [ ] Extend unified relations with `first_interaction_year` / `last_interaction_year`
-- [ ] Add `juan_start_year` mapping and sync policy between `juanRange` and `yearRange`
-- [ ] Define V1 imputation rules for events/relations missing numeric years (juan-based anchors)
-- [ ] Build `data/location_geocoding.json` pipeline to fill `UnifiedLocation.coordinates`
-- [ ] Add map mode to locations view (graceful fallback for null coordinates)
-- [ ] Derive and render entity trajectory from in-range events + geocoded locations
+这些来源信息是全局筛选、跳转和阅读上下文恢复的基础。
+
+## 待办
+
+- [ ] 完成人物/势力轨迹入口与降级提示。
+- [ ] 强化搜索结果的跨视图跳转。
+- [ ] 在详情面板中增加回到原文的入口。
+- [ ] 标注由推断得到的时间和坐标，避免和确定数据混淆。

@@ -1,235 +1,175 @@
-# Task Map (V1)
+# 任务地图（V1）
 
-> One-by-one checklist to implement `design.md` + `data_pipeline.md`.
-> Created at: 2026/01/17
+> 用来串联 `design.md` 与 `data_pipeline.md` 的实现清单。
+> 创建时间：2026/01/17
 
-## Current repo anchors (so tasks map to code)
+## 当前代码锚点
 
-- Extraction: `knowledge_extraction.py` → writes `data/store/juan_*.json` via `knowledge_store.py`
-- Unification: `entity_resolution.py` → writes `data/unified_knowledge.json`
-- Frontend entry: `visualization/src/App.tsx` (currently local state only; not URL-addressable)
-- Filters UI: `visualization/src/components/FilterControls.tsx`
-- Types: `visualization/src/types/unified.ts` (relations currently lack numeric year fields)
+- 抽取：`knowledge_extraction.py`，通过 `knowledge_store.py` 写入 `data/store/juan_*.json`
+- 融合：`entity_resolution.py`，写入 `data/unified_knowledge.json`
+- 前端入口：`visualization/src/App.tsx`
+- 筛选控件：`visualization/src/components/FilterControls.tsx`
+- 类型定义：`visualization/src/types/unified.ts`
 
-## Phase 0 — Freeze contracts (so work composes)
+## 阶段 0：冻结数据契约
 
-- [x] 1) **Finalize canonical schemas (doc + types)**
-- Output: agreed fields + JSON shape for:
-  - `data/segment_year_index.json`
-  - `data/juan_year_index.json`
-  - `data/location_geocoding.json` (incl. `overrides`)
-  - additions to `data/unified_knowledge.json` (relation years; optional event imputed years)
-- Success criteria: schemas are written down and referenced by both backend and frontend types.
-- Touchpoints:
-  - Docs: `data_pipeline.md`
-  - Frontend types: `visualization/src/types/unified.ts`
-  - Backend models (if any): `model/*`
+- [x] 1. 明确定义核心 JSON 结构
+  - 输出：
+    - `data/segment_year_index.json`
+    - `data/juan_year_index.json`
+    - `data/location_geocoding.json`
+    - `data/unified_knowledge.json` 的关系年份字段和事件补全年份字段
+  - 成功标准：后端脚本与前端类型引用同一套字段约定。
+  - 触点：`data_pipeline.md`、`visualization/src/types/unified.ts`、`model/*`
 
-- [x] 2) **Decide global time policy knobs**
-- Output: explicit config values (even if hard-coded for V1):
-  - `cutoff_year` for BCE/CE handling
-  - accepted regex formats for `segment_start_time`
-- Success criteria: documented defaults and failure behavior (“unknown year”).
-- Touchpoints:
-  - Docs: `data_pipeline.md`
+- [x] 2. 明确全局时间策略
+  - 输出：
+    - 公元/公元前处理规则
+    - `segment_start_time` 支持的正则格式
+    - 解析失败时的“未知年份”行为
+  - 触点：`data_pipeline.md`
 
-## Phase 1 — Time foundation (segment year + juan year)
+## 阶段 1：时间基础
 
-- [x] 3) **Implement segment-year parser (deterministic)**
-- Output: generator script produces `data/segment_year_index.json` from `adapted_book.json`.
-- Success criteria:
-  - produces a numeric `year` for most segments with explicit `前NNN` / `公元前NNN`
-  - records `parse_method` + `confidence`
-- Touchpoints:
-  - New script (suggested): `build_segment_year_index.py`
-  - Input: `adapted_book.json`
+- [x] 3. 实现确定性的段落年份解析
+  - 输出：从 `adapted_book.json` 生成 `data/segment_year_index.json`
+  - 成功标准：
+    - 大部分含 `前NNN` 或 `公元前NNN` 的段落能得到数值年份
+    - 记录 `parse_method` 与 `confidence`
+  - 触点：`scripts/build_segment_year_index.py`
 
-- [x] 4) **Add validation checks for year monotonicity**
-- Output: a validator that flags:
-  - non-decreasing violations within a juan
-  - sequential-on-year violations across juans (start-year order)
-- Success criteria: validator exits non-zero and prints actionable cases.
-- Touchpoints:
-  - Same script as above or `validate_year_index.py`
+- [x] 4. 增加年份顺序校验
+  - 输出：校验器能发现同卷内年份倒退、跨卷起始年份异常等问题
+  - 成功标准：异常时退出码非零，并打印可操作的案例
+  - 触点：`scripts/validate_year_index.py`
 
-- [x] 5) **Build juan start-year index**
-- Output: generator writes `data/juan_year_index.json` from `data/segment_year_index.json`.
-- Success criteria: every juan has a `juan_start_year` (or is flagged).
-- Touchpoints:
-  - New script (suggested): `build_juan_year_index.py`
+- [x] 5. 构建卷起始年份索引
+  - 输出：从 `data/segment_year_index.json` 生成 `data/juan_year_index.json`
+  - 成功标准：每卷都有 `juan_start_year`，缺失时能被明确标出
+  - 触点：`scripts/build_juan_year_index.py`
 
-## Phase 2 — Unified KB time enrichment (supports global filtering)
+## 阶段 2：统一知识库时间增强
 
-- [x] 6) **Extend unified relation schema with numeric years**
-- Output: `data/unified_knowledge.json` includes:
-  - `relations[*].first_interaction_year`
-  - `relations[*].last_interaction_year`
-- Success criteria: frontend network can filter edges by `yearRange` without parsing strings.
-- Touchpoints:
-  - Backend: `entity_resolution.py`
-  - Frontend: `visualization/src/utils/unifiedDataProcessing.ts`
+- [x] 6. 为统一关系增加数值年份
+  - 输出：
+    - `relations[*].first_interaction_year`
+    - `relations[*].last_interaction_year`
+  - 成功标准：前端关系网络不需要解析字符串即可按年份筛选
+  - 触点：`entity_resolution.py`、`visualization/src/utils/unifiedDataProcessing.ts`
 
-- [x] 7) **Derive relation years from segment index when missing**
-- Output: for each relation action with `(juan_index, segment_index)`:
-  - lookup segment year
-  - aggregate min/max per unified relation
-- Success criteria: coverage improves vs current “parse only from text time”.
-- Touchpoints:
-  - Backend: `entity_resolution.py`
-  - Inputs: `data/segment_year_index.json`
+- [x] 7. 关系缺少年份时从段落索引补全
+  - 输出：根据每个动作的 `(juan_index, segment_index)` 查找段落年份，并聚合到统一关系
+  - 成功标准：相比只解析文本时间，年份覆盖率提升
+  - 触点：`entity_resolution.py`、`data/segment_year_index.json`
 
-- [x] 8) **(Recommended) Add event imputed year fields**
+- [x] 8. 增加事件补全年份字段
 
-## Critical insertion — Separate non-human entities
+## 关键插入项：拆分非人物实体
 
-- [x] **Split polity/state-like extractions out of `Role`**
-  - Output: `data/unified_knowledge.json` includes `polities` (e.g. 秦/魏/赵…) and these no longer appear in `roles`.
-  - Touchpoints: `model/polity.py`, `model/unified.py`, `entity_resolution.py`
-  
-- [x] **Expand non-human classification to schools and organizations**
-  - Output: `data/unified_knowledge.json` includes:
-    - `schools` (e.g. 儒家/法家/道家/墨家…)
-    - `organizations` (e.g. 丞相府/太尉/秦军…)
-  - LLM prompt updated with `entity_type` field for direct classification
-  - Fallback heuristics classify based on name patterns
-  - Formal tests: `tests/test_entity_resolution.py` (20 tests passing)
-  - Touchpoints:
-    - `model/role.py` (added `entity_type` field)
-    - `model/school.py`, `model/organization.py` (new models)
-    - `model/unified.py` (added `UnifiedSchool`, `UnifiedOrganization`)
-    - `prompts/sys_entity_relation_extraction.md` (updated LLM schema)
-    - `entity_resolution.py` (entity routing + resolution methods)
+- [x] 从 `Role` 中拆出政权/国家类实体
+  - 输出：`data/unified_knowledge.json` 增加 `polities`，秦、魏、赵等不再混入人物
+  - 触点：`model/polity.py`、`model/unified.py`、`entity_resolution.py`
 
-## Phase 3 — Location geocoding cache (enables map mode)
+- [x] 扩展学派和组织分类
+  - 输出：
+    - `schools`，如儒家、法家、道家、墨家
+    - `organizations`，如丞相府、太尉、秦军
+  - LLM 提示词增加 `entity_type`
+  - 兜底规则按名称模式分类
+  - 测试：`tests/test_entity_resolution.py`
+  - 触点：
+    - `model/role.py`
+    - `model/school.py`
+    - `model/organization.py`
+    - `model/unified.py`
+    - `prompts/sys_entity_relation_extraction.md`
+    - `entity_resolution.py`
 
-- [x] 9) **Define Amap geocoding configuration + secrets handling**
-- Output: documented env vars (e.g. `AMAP_KEY`) + rate-limit strategy.
-- Success criteria: runs locally without committing secrets.
-- Touchpoints:
-  - Docs: `README.md` (or a short section in `data_pipeline.md`)
+## 阶段 3：地点地理编码缓存
 
-- [x] 10) **Implement unified-location geocoding stage (cached)**
-- Output: script generates/updates `data/location_geocoding.json` keyed by unified location id.
-- Success criteria:
-  - does not erase existing entries
-  - writes `[lng, lat]` in WGS84
-  - marks `needs_review` for ambiguous matches
-- Touchpoints:
-  - New script (suggested): `geocode_locations_amap.py`
-  - Input: `data/unified_knowledge.json`
+- [x] 9. 定义高德地理编码配置与密钥处理
+  - 输出：明确 `AMAP_KEY` 等环境变量和限流策略
+  - 成功标准：本地可运行，密钥不会被提交
+  - 触点：`README.md`、`data_pipeline.md`
 
-- [x] 11) **Merge geocoding results back into unified KB**
-- Output: `locations[*].coordinates` filled in `data/unified_knowledge.json`.
-- Success criteria: frontend reads coordinates only from unified KB.
-- Touchpoints:
-  - Backend: `entity_resolution.py` (post-pass) or a dedicated merge script
+- [x] 10. 实现统一地点地理编码缓存
+  - 输出：生成或更新 `data/location_geocoding.json`
+  - 成功标准：
+    - 不擦除已有条目
+    - 坐标写为 WGS84 `[lng, lat]`
+    - 多候选或低置信度时标记 `needs_review`
+  - 触点：`scripts/geocode_locations_amap.py`
 
-## Phase 4 — Frontend: global context + navigation semantics
+- [x] 11. 将地理编码结果回填统一知识库
+  - 输出：`data/unified_knowledge.json` 中的 `locations[*].coordinates` 被填充
+  - 成功标准：前端只读取统一知识库中的坐标
+  - 触点：`scripts/merge_geocoding_into_unified_kb.py`
 
-- [x] 12) **Make Global Context URL-addressable**
-- Output: `tab`, `juanRange`, `yearRange`, and focus/selection encoded in URL.
-- Success criteria:
-  - refresh restores context
-  - shareable links reproduce the same view
-- Touchpoints:
-  - Frontend router/state: `visualization/src/App.tsx`
+## 阶段 4：前端全局上下文与导航语义
 
-- [x] 13) **Implement push/replace history policy (commit semantics)**
-- Output:
-  - replace for high-frequency intermediate updates
-  - push on commit (blur/enter/mouseup)
-- Success criteria: browser Back/Forward feels like context navigation (not spammy).
-- Touchpoints:
-  - `visualization/src/components/FilterControls.tsx`
-  - timeline interactions: `visualization/src/components/Timeline.tsx`
+- [x] 12. 让全局上下文进入 URL
+  - 输出：`tab`、`juanRange`、`yearRange`、聚焦/选中对象进入 URL
+  - 成功标准：
+    - 刷新后恢复上下文
+    - 分享链接能复现同一视图
+  - 触点：`visualization/src/App.tsx`
 
-- [x] 14) **Apply `yearRange` filtering to network tab**
-- Output: edges filtered by relation numeric years; nodes derived from remaining edges.
-- Success criteria: network view matches global context constraints.
-- Touchpoints:
-  - `visualization/src/components/NetworkGraph.tsx`
-  - `visualization/src/utils/unifiedDataProcessing.ts`
+- [x] 13. 实现浏览器历史策略
+  - 输出：
+    - 高频中间更新使用 `replace`
+    - 用户提交后使用 `push`
+  - 成功标准：浏览器前进/后退像上下文导航，而不是被拖拽过程污染
+  - 触点：`FilterControls.tsx`、`Timeline.tsx`
 
-  Verified: `cd visualization && npm run build`
+- [x] 14. 关系网络支持 `yearRange` 筛选
+  - 输出：边按数值年份筛选，节点由剩余边推导
+  - 成功标准：关系网络与全局上下文一致
+  - 验证：`cd visualization && npm run build`
 
-- [x] 15) **Add juan↔year sync policy UI**
-- Output: when changing one range, offer/default update of the other (per `design.md`).
-- Success criteria: user can navigate by juan or year without confusion.
-- Touchpoints:
-  - `visualization/src/components/FilterControls.tsx`
-  - new read of `data/juan_year_index.json` (or embedded in unified KB)
+- [x] 15. 增加卷范围与年份范围联动
+  - 输出：修改其中一个范围时，同步或提示同步另一个范围
+  - 成功标准：用户可以按卷或按年份导航，不产生明显困惑
+  - 验证：`cd visualization && npm run build`
 
-  Verified: `cd visualization && npm run build`
+## 阶段 5：地点列表、地图与轨迹
 
-## Phase 5 — Frontend: locations list mode → map mode → trajectory
+- [x] 16. 地点列表完全受全局上下文驱动
+  - 输出：地点列表和详情随 `juanRange`、`yearRange` 变化
+  - 成功标准：只展示当前范围内相关地点
+  - 验证：`cd visualization && npm run build`
 
-- [x] 16) **Locations list mode fully driven by Global Context**
-- Output: location list + detail reflect `juanRange`/`yearRange`.
-- Success criteria: locations shown are “in-range relevant”.
-- Touchpoints:
-  - `visualization/src/components/DetailPanels.tsx` (location panels)
-  - `visualization/src/utils/unifiedDataProcessing.ts`
+- [x] 17. 增加地图模式，并处理坐标缺失
+  - 输出：基于 Leaflet + OpenStreetMap 的地图 tab
+  - 成功标准：没有坐标时不出现空白页，有坐标的地点可正常绘制
+  - 实现：
+    - 新组件：`visualization/src/components/MapView.tsx`
+    - 地点列表保留为列表模式
+    - 已将地理编码坐标回填到统一知识库样例数据
+  - 验证：`cd visualization && npm run build`
 
-  Verified: `cd visualization && npm run build`
+- [ ] 18. 完成人物/事件/势力轨迹体验
+  - 当前状态：`MapView` 中已有部分轨迹实现
+  - 剩余输出：在人物、事件、势力详情中增加入口；有年份和坐标时展示有序路径
+  - 成功标准：数据支持时显示轨迹，不支持时明确说明原因
+  - 触点：详情面板、地图视图、`unifiedDataProcessing.ts`
 
-- [x] 17) **Add map mode (graceful fallback for null coordinates)**
-- Output: toggle/dual-mode implementation inside locations tab:
-  - plot only in-range locations with coordinates
-  - keep list for missing coordinates
-- Success criteria: no blank screen when coords are missing.
-- Touchpoints:
-  - locations UI: `visualization/src/...` (new component likely needed)
+## 阶段 6：构建编排与可重复性
 
-  Implementation: Moved map to separate top-level tab using Leaflet + OpenStreetMap tiles.
-  - New component: `visualization/src/components/MapView.tsx`
-  - Uses `react-leaflet` with OSM tiles (neutral, shows rivers/mountains, no border issues)
-  - LocationsView simplified to list-only with max-height scroll
-  - Merged geocoding coordinates into `unified_knowledge.json` (195 locations)
-  
-  Verified: `cd visualization && npm run build`
+- [x] 19. 增加统一的数据构建入口
+  - 输出：一个命令按顺序运行年份索引、融合、地理编码、校验和发布
+  - 实现：`scripts/build_data.py`
+  - 验证：`uv run python scripts/build_data.py --skip-resolve`
 
-- [ ] 18) **Finish entity trajectory UX and fallback behavior**
-- Current state: partial `MapView` trajectory implementation exists.
-- Remaining output: add UX entry points for selected role/event/power and show ordered event-location paths when both year + coords exist.
-- Success criteria: trajectory only appears when data supports it; otherwise explain why it is absent.
-- Touchpoints:
-  - timeline/event detail + locations view
-  - `visualization/src/utils/unifiedDataProcessing.ts`
+- [x] 20. 增加产物冒烟校验
+  - 输出：校验 JSON 结构、坐标顺序/范围、关系年份合理性
+  - 实现：`scripts/validate_artifacts.py`
+  - 验证：`uv run pytest tests/test_validate_artifacts.py -q`
 
-## Phase 6 — Build orchestration & repeatability
+## 阶段 7：数据到界面的发布闭环
 
-- [x] 19) **Add a single “build data” entrypoint**
-- Output: one command that runs stages in order:
-  - Extract (optional)
-  - Segment year index
-  - Juan year index
-  - Unify
-  - Geocode
-  - Merge
-- Success criteria: reproducible outputs; incremental caching respected.
-- Touchpoints:
-  - `scripts/build_data.py`
-
-  Implementation: `scripts/build_data.py` runs deterministic year-index generation and validation, can resolve when `data/store` exists, can optionally geocode, and can publish runtime artifacts into `visualization/public/data`.
-
-  Verified: `uv run python scripts/build_data.py --skip-resolve`
-
-- [x] 20) **Add smoke validations for artifacts**
-- Output: validators for:
-  - schema shape
-  - coordinates format `[lng, lat]`
-  - year ranges sanity
-- Success criteria: failures are caught before shipping to `visualization/public/data/`.
-
-  Implementation: `scripts/validate_artifacts.py` checks required runtime JSON files, top-level schema objects, coordinate order/ranges, and relation year sanity.
-
-  Verified: `uv run pytest tests/test_validate_artifacts.py -q`
-
-## Phase 7 — Ship loop (data → UI)
-
-- [ ] 21) **Publish updated `data/unified_knowledge.json` to frontend**
-- Output: frontend serves the new data file(s) correctly.
-- Success criteria: visualization loads with no runtime errors and filters behave as designed.
-- Touchpoints:
-  - `visualization/public/data/*`
-  - `visualization/src/hooks/useUnifiedData.ts`
+- [ ] 21. 发布更新后的运行时数据到前端
+  - 输出：前端能读取新的 `unified_knowledge.json` 和 `juan_year_index.json`
+  - 成功标准：可视化无运行时错误，筛选和地图行为符合设计
+  - 触点：
+    - `visualization/public/data/*`
+    - `visualization/src/hooks/useUnifiedData.ts`
