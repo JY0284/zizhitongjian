@@ -154,7 +154,15 @@ Local secrets live in ignored `.env`. Copy `.env.example` to `.env` for local-on
 cp .env.example .env
 ```
 
-Set `DEEPSEEK_API_KEY` only when running LLM extraction. Set `AMAP_KEY` only when running geocoding. Never commit `.env`.
+Set `DEEPSEEK_API_KEY` only when running LLM extraction. `knowledge_extraction.py` reads process environment variables, so export the file before running extraction:
+
+```bash
+set -a
+source .env
+set +a
+```
+
+Set `AMAP_KEY` only when running geocoding. The geocoding script loads `.env` automatically. Never commit `.env`.
 
 ## 技术实现简述
 

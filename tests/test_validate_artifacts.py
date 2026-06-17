@@ -85,6 +85,21 @@ def test_validate_artifacts_reports_bad_coordinates(tmp_path):
     assert any("coordinates look like [lat, lng]" in error for error in errors)
 
 
+def test_validate_artifacts_reports_invalid_relation_year_order(tmp_path):
+    kb = minimal_kb()
+    kb["relations"]["智伯->赵襄子"]["first_interaction_year"] = -400
+    kb["relations"]["智伯->赵襄子"]["last_interaction_year"] = -453
+    write_json(tmp_path / "unified_knowledge.json", kb)
+    write_json(
+        tmp_path / "juan_year_index.json",
+        {"version": "v1", "generated_at": "2026-01-01T00:00:00", "juan_start_year": {"1": -403}},
+    )
+
+    errors = validate_artifacts(tmp_path)
+
+    assert any("first_interaction_year is after last_interaction_year" in error for error in errors)
+
+
 def test_validate_artifacts_reports_missing_files(tmp_path):
     errors = validate_artifacts(tmp_path)
 

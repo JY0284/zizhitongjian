@@ -25,6 +25,20 @@ def copy_if_exists(src: Path, dst: Path) -> bool:
     return True
 
 
+def require_extraction_store(store_dir: Path) -> None:
+    if not store_dir.exists():
+        raise SystemExit("data/store is missing. Run extraction first or pass --skip-resolve.")
+    if not any(store_dir.glob("juan_*.json")):
+        raise SystemExit("data/store contains no juan_*.json files. Run extraction first or pass --skip-resolve.")
+
+
+def require_frontend_sources(juan_path: Path, unified_path: Path) -> None:
+    if not juan_path.exists():
+        raise SystemExit("data/juan_year_index.json was not found after build.")
+    if not unified_path.exists():
+        raise SystemExit("data/unified_knowledge.json is missing. Cannot publish complete frontend runtime data.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Build deterministic data artifacts and optionally publish frontend runtime data"
@@ -48,9 +62,10 @@ def main() -> int:
 
     store_dir = PROJECT_ROOT / "data/store"
     unified_path = PROJECT_ROOT / "data/unified_knowledge.json"
+    juan_path = PROJECT_ROOT / "data/juan_year_index.json"
 
-    if not args.skip_resolve and not store_dir.exists():
-        raise SystemExit("data/store is missing. Run extraction first or pass --skip-resolve.")
+    if not args.skip_resolve:
+        require_extraction_store(store_dir)
 
     run([sys.executable, "scripts/build_segment_year_index.py", "--overrides", "data/segment_year_overrides.json"])
     run([sys.executable, "scripts/build_juan_year_index.py"])
@@ -81,12 +96,9 @@ def main() -> int:
 
     if args.publish_frontend:
         frontend_data = PROJECT_ROOT / "visualization/public/data"
-        copied_juan = copy_if_exists(PROJECT_ROOT / "data/juan_year_index.json", frontend_data / "juan_year_index.json")
-        copied_kb = copy_if_exists(unified_path, frontend_data / "unified_knowledge.json")
-        if not copied_juan:
-            raise SystemExit("data/juan_year_index.json was not found after build.")
-        if not copied_kb:
-            raise SystemExit("data/unified_knowledge.json is missing. Cannot publish complete frontend runtime data.")
+        require_frontend_sources(juan_path, unified_path)
+        copy_if_exists(juan_path, frontend_data / "juan_year_index.json")
+        copy_if_exists(unified_path, frontend_data / "unified_knowledge.json")
         run([sys.executable, "scripts/validate_artifacts.py", "--data-dir", "visualization/public/data"])
 
     return 0
