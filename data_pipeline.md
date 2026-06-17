@@ -251,7 +251,7 @@ V1 enrichment during/after unification:
 
 Config:
 
-- Create `.env` from `.env.example` and set `AMAP_KEY`.
+- Create `.env` from `.env.sample` and set `AMAP_KEY`.
 
 Scripts:
 

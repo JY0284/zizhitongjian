@@ -16,4 +16,4 @@ settings.json
 # Local env files (secrets)
 .env
 .env.*
-!.env.example
+!.env.sample
