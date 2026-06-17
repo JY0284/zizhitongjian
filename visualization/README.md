@@ -61,6 +61,8 @@ The current app reads unified runtime artifacts:
 
 If these files are missing, the app will show a load error. Generate the artifacts in the repo root, then publish them into `visualization/public/data/`.
 
+`public/data/.gitkeep` exists only to keep the runtime data directory visible. Generated JSON files in this directory should be produced by the root pipeline and reviewed before publishing.
+
 ## 项目结构
 
 ```
