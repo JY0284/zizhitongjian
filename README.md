@@ -164,6 +164,8 @@ set +a
 
 Set `AMAP_KEY` only when running geocoding. The geocoding script loads `.env` automatically. Never commit `.env`.
 
+The default extraction model is `deepseek-v4-flash`. Set `DEEPSEEK_MODEL=deepseek-v4-pro` for reasoning-heavy extraction passes.
+
 ## 技术实现简述
 
 为了支撑上述可视化系统，本项目构建了一套完整的知识提取与融合流程：

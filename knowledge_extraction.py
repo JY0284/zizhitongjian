@@ -24,9 +24,9 @@ import os
 from langchain_deepseek import ChatDeepSeek
 from openai import OpenAI
 
-# Create a ChatOpenAI instance
+# Create a ChatDeepSeek instance
 chat_model = ChatDeepSeek(
-    model="deepseek-chat",
+    model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
     temperature=0,
     # max_tokens=None,
     timeout=None,
@@ -52,8 +52,8 @@ os.environ.pop("https_proxy", None)
 sys_extraction_prompt = open("prompts/sys_entity_relation_extraction.md", "r").read()
 
 chat_model = ChatDeepSeek(
-    # model="deepseek-reasoner",
-    model="deepseek-chat",
+    # Use deepseek-v4-pro for reasoning-heavy extraction passes.
+    model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
     temperature=0.1,
     max_tokens=None,
     timeout=None,
@@ -228,5 +228,3 @@ print(store.summary())
 # %%
 # Dump the Pydantic model to JSON (Example of exporting all data)
 # json.dump(store._data, open('data/knowledge_store_dump.json', 'w'), ensure_ascii=False, indent=2)
-
-
