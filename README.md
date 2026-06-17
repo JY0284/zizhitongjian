@@ -166,6 +166,12 @@ set +a
 
 默认抽取模型是 `deepseek-v4-flash`。需要更强推理能力时，将 `DEEPSEEK_MODEL` 设为 `deepseek-v4-pro`。
 
+### 工程文档
+
+- [UI 设计](docs/architecture/design.md)
+- [数据流水线设计](docs/architecture/data_pipeline.md)
+- [任务地图](docs/architecture/task_map.md)
+
 ## 技术实现简述
 
 为了支撑上述可视化系统，本项目构建了一套完整的知识提取与融合流程：
