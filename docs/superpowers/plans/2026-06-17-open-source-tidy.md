@@ -1,0 +1,628 @@
+# Open Source Tidy Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Make the project easier for contributors and users to understand, reproduce, and run while preserving its purpose: a better way to see history and learn from it.
+
+**Architecture:** Keep the cleanup small and explicit. Treat source corpus, generated artifacts, runtime frontend data, and paid API stages as separate concerns with clear commands and validation. Do not commit local secrets or large generated data unless the maintainer explicitly chooses to publish a specific artifact.
+
+**Tech Stack:** Python 3.11 with `uv`, Pydantic, pytest, React/Vite/TypeScript, D3, React-Leaflet, mdBook.
+
+---
+
+## File Structure
+
+- Modify `README.md`: clarify project purpose, quick start, generated-data story, local secret setup, and verification commands.
+- Modify `visualization/README.md`: align with the current unified-KB frontend instead of stale `juan_*.json` docs.
+- Modify `data_pipeline.md`: document canonical build order, generated artifacts, and secret/API boundaries.
+- Modify `task_map.md`: mark already-partial trajectory work accurately and add next cleanup tasks.
+- Create `scripts/build_data.py`: simple orchestration entrypoint for deterministic data stages and optional expensive stages.
+- Create `scripts/validate_artifacts.py`: smoke validator for runtime JSON artifacts before publishing to frontend.
+- Create `tests/test_validate_artifacts.py`: focused unit tests for artifact validation.
+- Create or update `visualization/public/data/.gitkeep`: keep the expected runtime data directory visible without committing generated payloads.
+- Do not commit `.env`, API keys, `data/store`, `data/unified_knowledge.json`, `data/location_geocoding.json`, or generated frontend data unless explicitly approved.
+
+---
+
+## Task 1: Document The Project For Contributors
+
+**Files:**
+- Modify: `README.md`
+- Modify: `visualization/README.md`
+- Modify: `data_pipeline.md`
+- Modify: `task_map.md`
+
+- [ ] **Step 1: Review current docs for stale data/runtime claims**
+
+Run:
+
+```bash
+rg -n "public/data|juan_\\*|unified_knowledge|location_geocoding|data/store|npm run build|pytest|TODO|\\[ \\]" README.md visualization/README.md data_pipeline.md task_map.md
+```
+
+Expected: output identifies the stale frontend `juan_*.json` wording and the unfinished build/validation/frontend publish tasks.
+
+- [ ] **Step 2: Update `README.md` with a simple contributor quick start**
+
+Add or revise sections with this content, adapted to the existing README style:
+
+````markdown
+## Local Development
+
+This repository has two layers:
+
+1. Corpus and pipeline: Markdown chapters, structured book JSON, extraction models, and artifact builders.
+2. Visualization: a React app that reads generated runtime JSON from `visualization/public/data/`.
+
+### Python checks
+
+```bash
+uv run pytest -q
+uv run python scripts/validate_segment_year_index.py --fail
+```
+
+### Frontend checks
+
+```bash
+cd visualization
+npm install
+npm run build
+```
+
+### Runtime data
+
+The visualization expects:
+
+- `visualization/public/data/unified_knowledge.json`
+- `visualization/public/data/juan_year_index.json`
+
+These files are generated artifacts. If they are not present, build or copy them from the pipeline output before starting the frontend.
+
+### Local API keys
+
+Copy `.env.example` to `.env` for local-only secrets:
+
+```bash
+cp .env.example .env
+```
+
+Set `DEEPSEEK_API_KEY` only when running LLM extraction. Set `AMAP_KEY` only when running geocoding. Never commit `.env`.
+````
+
+- [ ] **Step 3: Update `visualization/README.md` to match unified data loading**
+
+Replace references to `public/data/juan_*.json` and `metadata.json` with:
+
+```markdown
+The current app reads unified runtime artifacts:
+
+- `public/data/unified_knowledge.json`
+- `public/data/juan_year_index.json`
+
+If these files are missing, the app will show a load error. Generate the artifacts in the repo root, then publish them into `visualization/public/data/`.
+```
+
+- [ ] **Step 4: Update `data_pipeline.md` with the canonical build order**
+
+Document this order clearly:
+
+```markdown
+Canonical local build order:
+
+1. `uv run python scripts/build_segment_year_index.py --overrides data/segment_year_overrides.json`
+2. `uv run python scripts/build_juan_year_index.py`
+3. `uv run python entity_resolution.py --store-dir data/store --output data/unified_knowledge.json`
+4. Optional: `uv run python scripts/geocode_locations_amap.py`
+5. Optional: `uv run python scripts/merge_geocoding_into_unified_kb.py`
+6. `uv run python scripts/validate_artifacts.py`
+7. Publish selected runtime artifacts into `visualization/public/data/`
+```
+
+Make explicit that step 3 requires `data/store/juan_*.json`, which is generated by the LLM extraction stage and may not exist in a clean checkout.
+
+- [ ] **Step 5: Update `task_map.md`**
+
+Change the trajectory task wording from “not done” to “partial implementation exists; finish UX and fallback behavior.” Keep tasks 19-21 as open until build orchestration, validation, and frontend publish are implemented.
+
+- [ ] **Step 6: Verify documentation only**
+
+Run:
+
+```bash
+git diff -- README.md visualization/README.md data_pipeline.md task_map.md
+```
+
+Expected: docs now explain what a clean checkout can do, what requires generated data, and where secrets live.
+
+- [ ] **Step 7: Commit docs cleanup**
+
+```bash
+git add README.md visualization/README.md data_pipeline.md task_map.md
+git commit -m "docs: clarify project setup and data artifacts
+
+- document local Python and frontend verification commands
+- explain generated runtime data required by the visualization
+- clarify local-only DeepSeek and Amap secret handling"
+```
+
+---
+
+## Task 2: Add Artifact Smoke Validation
+
+**Files:**
+- Create: `scripts/validate_artifacts.py`
+- Create: `tests/test_validate_artifacts.py`
+
+- [ ] **Step 1: Write tests for validator behavior**
+
+Create `tests/test_validate_artifacts.py`:
+
+```python
+import json
+from pathlib import Path
+
+from scripts.validate_artifacts import validate_artifacts
+
+
+def write_json(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+
+def minimal_kb() -> dict:
+    return {
+        "roles": {
+            "赵襄子": {
+                "id": "赵襄子",
+                "canonical_name": "赵襄子",
+                "all_names": ["赵襄子"],
+                "juans_appeared": [1],
+            }
+        },
+        "locations": {
+            "晋阳": {
+                "id": "晋阳",
+                "canonical_name": "晋阳",
+                "coordinates": [112.5489, 37.8706],
+                "juans_appeared": [1],
+            }
+        },
+        "events": {
+            "晋阳之战": {
+                "id": "晋阳之战",
+                "name": "晋阳之战",
+                "time_start": -453,
+                "time_end": -453,
+                "source_juans": [1],
+            }
+        },
+        "relations": {
+            "智伯->赵襄子": {
+                "id": "智伯->赵襄子",
+                "from_entity": "智伯",
+                "to_entity": "赵襄子",
+                "first_interaction_year": -453,
+                "last_interaction_year": -453,
+                "source_juans": [1],
+            }
+        },
+        "name_to_role_id": {"赵襄子": "赵襄子"},
+        "name_to_location_id": {"晋阳": "晋阳"},
+        "power_to_roles": {},
+        "juan_to_roles": {"1": ["赵襄子"]},
+        "juan_to_events": {"1": ["晋阳之战"]},
+        "total_roles": 1,
+        "total_locations": 1,
+        "total_events": 1,
+        "total_relations": 1,
+        "juans_processed": [1],
+    }
+
+
+def test_validate_artifacts_accepts_minimal_runtime_data(tmp_path):
+    write_json(tmp_path / "unified_knowledge.json", minimal_kb())
+    write_json(
+        tmp_path / "juan_year_index.json",
+        {"version": "v1", "generated_at": "2026-01-01T00:00:00", "juan_start_year": {"1": -403}},
+    )
+
+    errors = validate_artifacts(tmp_path)
+
+    assert errors == []
+
+
+def test_validate_artifacts_reports_bad_coordinates(tmp_path):
+    kb = minimal_kb()
+    kb["locations"]["晋阳"]["coordinates"] = [37.8706, 112.5489]
+    write_json(tmp_path / "unified_knowledge.json", kb)
+    write_json(
+        tmp_path / "juan_year_index.json",
+        {"version": "v1", "generated_at": "2026-01-01T00:00:00", "juan_start_year": {"1": -403}},
+    )
+
+    errors = validate_artifacts(tmp_path)
+
+    assert any("coordinates look like [lat, lng]" in error for error in errors)
+
+
+def test_validate_artifacts_reports_missing_files(tmp_path):
+    errors = validate_artifacts(tmp_path)
+
+    assert "missing unified_knowledge.json" in errors
+    assert "missing juan_year_index.json" in errors
+```
+
+- [ ] **Step 2: Run tests and verify they fail**
+
+Run:
+
+```bash
+uv run pytest tests/test_validate_artifacts.py -q
+```
+
+Expected: FAIL because `scripts.validate_artifacts` does not exist.
+
+- [ ] **Step 3: Implement `scripts/validate_artifacts.py`**
+
+Create `scripts/validate_artifacts.py`:
+
+```python
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any
+
+
+def load_json(path: Path) -> Any:
+    with path.open("r", encoding="utf-8") as f:
+        return json.load(f)
+
+
+def is_number(value: Any) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def validate_coordinates(location_id: str, coords: Any) -> list[str]:
+    if coords is None:
+        return []
+    if not isinstance(coords, list) or len(coords) != 2:
+        return [f"location {location_id}: coordinates must be [lng, lat] or null"]
+    lng, lat = coords
+    if not is_number(lng) or not is_number(lat):
+        return [f"location {location_id}: coordinates must contain numbers"]
+    if not (-180 <= lng <= 180 and -90 <= lat <= 90):
+        return [f"location {location_id}: coordinates out of valid range"]
+    if 15 <= lng <= 55 and 70 <= lat <= 140:
+        return [f"location {location_id}: coordinates look like [lat, lng], expected [lng, lat]"]
+    return []
+
+
+def validate_relation_years(relation_id: str, relation: dict[str, Any]) -> list[str]:
+    errors: list[str] = []
+    first = relation.get("first_interaction_year")
+    last = relation.get("last_interaction_year")
+    if first is not None and not isinstance(first, int):
+        errors.append(f"relation {relation_id}: first_interaction_year must be int or null")
+    if last is not None and not isinstance(last, int):
+        errors.append(f"relation {relation_id}: last_interaction_year must be int or null")
+    if isinstance(first, int) and isinstance(last, int) and first > last:
+        errors.append(f"relation {relation_id}: first_interaction_year is after last_interaction_year")
+    return errors
+
+
+def validate_artifacts(data_dir: Path) -> list[str]:
+    errors: list[str] = []
+    kb_path = data_dir / "unified_knowledge.json"
+    juan_path = data_dir / "juan_year_index.json"
+
+    if not kb_path.exists():
+        errors.append("missing unified_knowledge.json")
+    if not juan_path.exists():
+        errors.append("missing juan_year_index.json")
+    if errors:
+        return errors
+
+    kb = load_json(kb_path)
+    juan_index = load_json(juan_path)
+
+    for key in ["roles", "locations", "events", "relations", "name_to_role_id", "name_to_location_id"]:
+        if not isinstance(kb.get(key), dict):
+            errors.append(f"unified_knowledge.json: {key} must be an object")
+
+    if not isinstance(juan_index.get("juan_start_year"), dict):
+        errors.append("juan_year_index.json: juan_start_year must be an object")
+
+    for loc_id, location in (kb.get("locations") or {}).items():
+        if not isinstance(location, dict):
+            errors.append(f"location {loc_id}: must be an object")
+            continue
+        errors.extend(validate_coordinates(loc_id, location.get("coordinates")))
+
+    for relation_id, relation in (kb.get("relations") or {}).items():
+        if not isinstance(relation, dict):
+            errors.append(f"relation {relation_id}: must be an object")
+            continue
+        errors.extend(validate_relation_years(relation_id, relation))
+
+    return errors
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Smoke validate frontend runtime data artifacts")
+    parser.add_argument("--data-dir", default="data", help="Directory containing unified_knowledge.json and juan_year_index.json")
+    args = parser.parse_args()
+
+    errors = validate_artifacts(Path(args.data_dir))
+    if not errors:
+        print("OK: artifact smoke validation passed")
+        return 0
+
+    print(f"Found {len(errors)} artifact validation error(s):")
+    for error in errors:
+        print(f"- {error}")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 4: Run validator tests**
+
+Run:
+
+```bash
+uv run pytest tests/test_validate_artifacts.py -q
+```
+
+Expected: PASS.
+
+- [ ] **Step 5: Run existing tests**
+
+Run:
+
+```bash
+uv run pytest -q
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 6: Commit validator**
+
+```bash
+git add scripts/validate_artifacts.py tests/test_validate_artifacts.py
+git commit -m "test: add runtime artifact smoke validation
+
+- validate required frontend data files before publishing
+- check coordinate order and relation year sanity
+- cover validator success and failure cases"
+```
+
+---
+
+## Task 3: Add A Simple Data Build Entrypoint
+
+**Files:**
+- Create: `scripts/build_data.py`
+- Test: manual command checks
+
+- [ ] **Step 1: Create the build orchestration script**
+
+Create `scripts/build_data.py`:
+
+```python
+#!/usr/bin/env python3
+
+from __future__ import annotations
+
+import argparse
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(cmd: list[str]) -> None:
+    print("+ " + " ".join(cmd))
+    subprocess.run(cmd, cwd=PROJECT_ROOT, check=True)
+
+
+def copy_if_exists(src: Path, dst: Path) -> bool:
+    if not src.exists():
+        return False
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, dst)
+    return True
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build deterministic data artifacts and optionally publish frontend runtime data")
+    parser.add_argument("--skip-resolve", action="store_true", help="Skip entity resolution; useful when data/store is absent")
+    parser.add_argument("--geocode", action="store_true", help="Run Amap geocoding; requires AMAP_KEY in local .env or environment")
+    parser.add_argument("--publish-frontend", action="store_true", help="Copy runtime artifacts into visualization/public/data")
+    args = parser.parse_args()
+
+    run([sys.executable, "scripts/build_segment_year_index.py", "--overrides", "data/segment_year_overrides.json"])
+    run([sys.executable, "scripts/build_juan_year_index.py"])
+    run([sys.executable, "scripts/validate_segment_year_index.py", "--fail"])
+
+    store_dir = PROJECT_ROOT / "data/store"
+    unified_path = PROJECT_ROOT / "data/unified_knowledge.json"
+
+    if not args.skip_resolve:
+        if not store_dir.exists():
+            raise SystemExit("data/store is missing. Run extraction first or pass --skip-resolve.")
+        run([sys.executable, "entity_resolution.py", "--store-dir", "data/store", "--output", "data/unified_knowledge.json"])
+
+    if args.geocode:
+        if not unified_path.exists():
+            raise SystemExit("data/unified_knowledge.json is missing. Cannot geocode.")
+        run([sys.executable, "scripts/geocode_locations_amap.py"])
+        run([sys.executable, "scripts/merge_geocoding_into_unified_kb.py"])
+
+    if unified_path.exists():
+        run([sys.executable, "scripts/validate_artifacts.py", "--data-dir", "data"])
+    else:
+        print("Skipping unified artifact validation because data/unified_knowledge.json is missing.")
+
+    if args.publish_frontend:
+        frontend_data = PROJECT_ROOT / "visualization/public/data"
+        copied_juan = copy_if_exists(PROJECT_ROOT / "data/juan_year_index.json", frontend_data / "juan_year_index.json")
+        copied_kb = copy_if_exists(unified_path, frontend_data / "unified_knowledge.json")
+        if not copied_juan:
+            raise SystemExit("data/juan_year_index.json was not found after build.")
+        if not copied_kb:
+            raise SystemExit("data/unified_knowledge.json is missing. Cannot publish complete frontend runtime data.")
+        run([sys.executable, "scripts/validate_artifacts.py", "--data-dir", "visualization/public/data"])
+
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+```
+
+- [ ] **Step 2: Run deterministic build path**
+
+Run:
+
+```bash
+uv run python scripts/build_data.py --skip-resolve
+```
+
+Expected: segment year index, juan year index, and segment validation run successfully; script prints that unified validation is skipped if `data/unified_knowledge.json` is absent.
+
+- [ ] **Step 3: Confirm missing store behavior is explicit**
+
+Run:
+
+```bash
+uv run python scripts/build_data.py
+```
+
+Expected in a clean checkout without `data/store`: fails with `data/store is missing. Run extraction first or pass --skip-resolve.`
+
+- [ ] **Step 4: Commit build entrypoint**
+
+```bash
+git add scripts/build_data.py
+git commit -m "build: add simple data build entrypoint
+
+- orchestrate deterministic year index generation and validation
+- make missing extraction store behavior explicit
+- support optional frontend runtime data publishing"
+```
+
+---
+
+## Task 4: Make Frontend Runtime Data Directory Discoverable
+
+**Files:**
+- Create: `visualization/public/data/.gitkeep`
+- Modify: `visualization/README.md`
+
+- [ ] **Step 1: Add a placeholder directory marker**
+
+Run:
+
+```bash
+mkdir -p visualization/public/data
+touch visualization/public/data/.gitkeep
+```
+
+Expected: `visualization/public/data/` exists in git without committing generated JSON.
+
+- [ ] **Step 2: Document what belongs in the directory**
+
+Add to `visualization/README.md`:
+
+```markdown
+`public/data/.gitkeep` exists only to keep the runtime data directory visible. Generated JSON files in this directory should be produced by the root pipeline and reviewed before publishing.
+```
+
+- [ ] **Step 3: Verify frontend build still compiles without runtime JSON**
+
+Run:
+
+```bash
+cd visualization
+npm run build
+```
+
+Expected: build succeeds because Vite does not require runtime fetch targets at compile time.
+
+- [ ] **Step 4: Commit frontend data directory marker**
+
+```bash
+git add visualization/public/data/.gitkeep visualization/README.md
+git commit -m "docs: clarify frontend runtime data directory
+
+- keep public data directory visible without generated JSON
+- document expected runtime artifacts
+- confirm frontend build remains independent of runtime data"
+```
+
+---
+
+## Task 5: Final Verification And Project Tidy Check
+
+**Files:**
+- No required file changes unless verification exposes a small issue.
+
+- [ ] **Step 1: Run backend tests**
+
+Run:
+
+```bash
+uv run pytest -q
+```
+
+Expected: all tests pass.
+
+- [ ] **Step 2: Run deterministic data checks**
+
+Run:
+
+```bash
+uv run python scripts/build_data.py --skip-resolve
+```
+
+Expected: year artifacts are rebuilt and validated.
+
+- [ ] **Step 3: Run frontend build**
+
+Run:
+
+```bash
+cd visualization
+npm run build
+```
+
+Expected: TypeScript and Vite production build pass.
+
+- [ ] **Step 4: Inspect git state**
+
+Run:
+
+```bash
+git status --short
+```
+
+Expected: only intentional files are changed or no changes remain after commits.
+
+- [ ] **Step 5: Summarize remaining deliberate gaps**
+
+In the final response, explicitly mention:
+
+- LLM extraction was not run.
+- Amap geocoding was not run.
+- No API keys were committed.
+- `data/store` and `data/unified_knowledge.json` are still generated/runtime concerns unless the maintainer provides or regenerates them.
+- The next product-focused work should improve trajectory UX and global search because those directly support learning history through time, place, and relationships.
