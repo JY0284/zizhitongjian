@@ -198,7 +198,7 @@
 
 ## Phase 6 — Build orchestration & repeatability
 
-- [ ] 19) **Add a single “build data” entrypoint**
+- [x] 19) **Add a single “build data” entrypoint**
 - Output: one command that runs stages in order:
   - Extract (optional)
   - Segment year index
@@ -208,14 +208,22 @@
   - Merge
 - Success criteria: reproducible outputs; incremental caching respected.
 - Touchpoints:
-  - `main.py` (if used as CLI) or a new `scripts/` driver
+  - `scripts/build_data.py`
 
-- [ ] 20) **Add smoke validations for artifacts**
+  Implementation: `scripts/build_data.py` runs deterministic year-index generation and validation, can resolve when `data/store` exists, can optionally geocode, and can publish runtime artifacts into `visualization/public/data`.
+
+  Verified: `uv run python scripts/build_data.py --skip-resolve`
+
+- [x] 20) **Add smoke validations for artifacts**
 - Output: validators for:
   - schema shape
   - coordinates format `[lng, lat]`
   - year ranges sanity
 - Success criteria: failures are caught before shipping to `visualization/public/data/`.
+
+  Implementation: `scripts/validate_artifacts.py` checks required runtime JSON files, top-level schema objects, coordinate order/ranges, and relation year sanity.
+
+  Verified: `uv run pytest tests/test_validate_artifacts.py -q`
 
 ## Phase 7 — Ship loop (data → UI)
 
