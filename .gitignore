@@ -1,19 +1,39 @@
+# Python
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
 .ipynb_checkpoints/
 .virtual_documents/
-**/__pycache__/
-**/node_modules/
-inter/
-debug_logs/
 .python-version
-*.db
-*.bak
-data/
-settings.json
 
-# Local editor settings
-.vscode/
+# Node / frontend
+**/node_modules/
+**/dist/
+**/dist-ssr/
+coverage/
+htmlcov/
+book/
 
-# Local env files (secrets)
+# Local environment files (secrets)
 .env
 .env.*
 !.env.sample
+
+# Local app state and generated artifacts
+data/
+visualization/public/data/
+inter/
+debug_logs/
+settings.json
+*.db
+*.bak
+*.log
+
+# Local editor / OS files
+.vscode/
+.idea/
+.DS_Store
