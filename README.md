@@ -115,6 +115,47 @@ npm install
 npm run dev
 ```
 
+## Local Development
+
+This repository has two layers:
+
+1. Corpus and pipeline: Markdown chapters, structured book JSON, extraction models, and artifact builders.
+2. Visualization: a React app that reads generated runtime JSON from `visualization/public/data/`.
+
+### Python checks
+
+```bash
+uv run pytest -q
+uv run python scripts/validate_segment_year_index.py --fail
+```
+
+### Frontend checks
+
+```bash
+cd visualization
+npm install
+npm run build
+```
+
+### Runtime data
+
+The visualization expects:
+
+- `visualization/public/data/unified_knowledge.json`
+- `visualization/public/data/juan_year_index.json`
+
+These files are generated artifacts and may be absent in a clean checkout. If they are not present, build or copy them from the pipeline output before starting the frontend.
+
+### Local API keys
+
+Local secrets live in ignored `.env`. Copy `.env.example` to `.env` for local-only configuration:
+
+```bash
+cp .env.example .env
+```
+
+Set `DEEPSEEK_API_KEY` only when running LLM extraction. Set `AMAP_KEY` only when running geocoding. Never commit `.env`.
+
 ## 技术实现简述
 
 为了支撑上述可视化系统，本项目构建了一套完整的知识提取与融合流程：

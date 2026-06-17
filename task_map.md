@@ -188,9 +188,10 @@
   
   Verified: `cd visualization && npm run build`
 
-- [ ] 18) **Derive and render entity trajectory**
-- Output: for selected role/event/power, show ordered event-location path when both year + coords exist.
-- Success criteria: trajectory only appears when data supports it; otherwise explain why absent.
+- [ ] 18) **Finish entity trajectory UX and fallback behavior**
+- Current state: partial `MapView` trajectory implementation exists.
+- Remaining output: add UX entry points for selected role/event/power and show ordered event-location paths when both year + coords exist.
+- Success criteria: trajectory only appears when data supports it; otherwise explain why it is absent.
 - Touchpoints:
   - timeline/event detail + locations view
   - `visualization/src/utils/unifiedDataProcessing.ts`

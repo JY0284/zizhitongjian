@@ -54,16 +54,12 @@ npm run preview
 
 ## 数据结构
 
-系统读取 `public/data/` 目录下的 JSON 数据文件:
+The current app reads unified runtime artifacts:
 
-- `juan_*.json`: 各卷提取的历史数据
-- `metadata.json`: 元数据信息
+- `public/data/unified_knowledge.json`
+- `public/data/juan_year_index.json`
 
-每个提取记录包含:
-- **entities** (实体/人物): 名称、别名、势力、描述
-- **events** (事件): 名称、时间、地点、参与者、描述、意义
-- **relations** (关系/行为): 主体、客体、行为、背景、结果
-- **locations** (地点): 名称、类型、现代地名、坐标
+If these files are missing, the app will show a load error. Generate the artifacts in the repo root, then publish them into `visualization/public/data/`.
 
 ## 项目结构
 
