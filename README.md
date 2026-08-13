@@ -227,4 +227,4 @@ set +a
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=JY0284/zizhitongjian&type=Date)](https://star-history.com/#JY0284/zizhitongjian&Date)
+[![Star History Chart](https://star-history.dera.page/svg?repos=JY0284/zizhitongjian&type=Date)](https://star-history.dera.page/#JY0284/zizhitongjian&Date)
