@@ -10,6 +10,8 @@ class Event(BaseModel):
     of multiple actions and involve multiple entities.
     """
     
+    is_retrospective: bool = Field(default=False, description="Whether this is a recalled earlier event")
+
     name: str = Field(
         description="事件名称，如'晋阳之战'、'三家分晋'等"
     )
@@ -59,6 +61,11 @@ class Event(BaseModel):
         if v is None:
             return ""
         return v
+
+    @field_validator('time', 'location', mode='before')
+    @classmethod
+    def normalize_unknown_optional(cls, value):
+        return None if isinstance(value, str) and value.strip().lower() in {'none', 'null', ''} else value
 
 
     sentence_indexes_in_segment: List[int] = Field(

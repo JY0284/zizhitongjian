@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useCallback, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useCallback, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useUnifiedKnowledgeBase, useUnifiedVisualizationData } from './hooks/useUnifiedData';
 import { useJuanYearIndex } from './hooks/useJuanYearIndex';
@@ -12,13 +12,16 @@ import {
   LocationsView,
   LocationDetail,
   RelationDetail,
-  MapView,
   GitHubRepoBadge,
 } from './components';
 import type { TimelineEventUnified, RoleNodeUnified, UnifiedLocation, RoleLinkUnified } from './types/unified';
 import { parseUrlGlobalContext, writeUrlGlobalContext } from './state';
+import { juanYearRange, juansOverlappingYears } from './utils/yearRanges';
+import { roleNavigation, resolveRoleId } from './utils/roleNavigation';
+import { hasMapPosition } from './utils/mapCoordinates';
 
 type TabType = 'timeline' | 'network' | 'power' | 'locations' | 'map';
+const MapView = lazy(() => import('./components/MapView').then(module => ({ default: module.MapView })));
 
 // Interface for showing all relations between two nodes
 interface SelectedRelationPair {
@@ -32,14 +35,14 @@ interface SelectedRelationPair {
 function App() {
   // Use the unified knowledge base hook
   const { kb, loading, error } = useUnifiedKnowledgeBase();
-  const { juanYearIndex } = useJuanYearIndex();
+  const { juanYearIndex, loading: yearsLoading, error: yearsError } = useJuanYearIndex();
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const initialCtxRef = useRef(parseUrlGlobalContext(searchParams, 294));
+  const [initialCtx] = useState(() => parseUrlGlobalContext(searchParams, 294));
   
-  const [juanRange, setJuanRange] = useState<[number, number]>(initialCtxRef.current.juanRange);
-  const [timeRange, setTimeRange] = useState<[number | null, number | null]>(initialCtxRef.current.yearRange);
-  const [activeTab, setActiveTab] = useState<TabType>(initialCtxRef.current.tab);
+  const [juanRange, setJuanRange] = useState<[number, number]>(initialCtx.juanRange);
+  const [timeRange, setTimeRange] = useState<[number | null, number | null]>(initialCtx.yearRange);
+  const [activeTab, setActiveTab] = useState<TabType>(initialCtx.tab);
   const [syncJuanYear, setSyncJuanYear] = useState(true);
   
   const [selectedEvent, setSelectedEvent] = useState<TimelineEventUnified | null>(null);
@@ -55,15 +58,6 @@ function App() {
     timelineEvents, 
     locations, 
   } = useUnifiedVisualizationData(kb, juanRange, timeRange);
-
-  const juanStartYearPairs = useMemo(() => {
-    const m = juanYearIndex?.juan_start_year;
-    if (!m) return null;
-    return Object.entries(m)
-      .map(([juan, year]) => ({ juan: Number(juan), year }))
-      .filter((x) => Number.isFinite(x.juan) && typeof x.year === 'number')
-      .sort((a, b) => a.juan - b.juan);
-  }, [juanYearIndex]);
 
   const normalizeJuanRange = useCallback((range: [number, number], maxJuan: number): [number, number] => {
     let [start, end] = range;
@@ -81,42 +75,18 @@ function App() {
 
   const deriveYearRangeFromJuanRange = useCallback(
     (range: [number, number]): [number | null, number | null] | null => {
-      const m = juanYearIndex?.juan_start_year;
-      if (!m) return null;
-      const startYear = m[String(range[0])];
-      const endYear = m[String(range[1])];
-      if (typeof startYear !== 'number' || typeof endYear !== 'number') return null;
-      return startYear <= endYear ? [startYear, endYear] : [endYear, startYear];
+      return juanYearIndex ? juanYearRange(juanYearIndex, range) : null;
     },
     [juanYearIndex]
   );
 
   const deriveJuanRangeFromYearRange = useCallback(
     (range: [number | null, number | null], maxJuan: number): [number, number] | null => {
-      if (!juanStartYearPairs) return null;
-      const [startY, endY] = normalizeYearRange(range);
-      if (startY === null && endY === null) return null;
-
-      const effectiveStart = startY ?? -Infinity;
-      const effectiveEnd = endY ?? Infinity;
-
-      const candidates = juanStartYearPairs.filter((p) => p.year >= effectiveStart && p.year <= effectiveEnd);
-      if (candidates.length > 0) {
-        const startJuan = Math.max(1, Math.min(maxJuan, candidates[0].juan));
-        const endJuan = Math.max(1, Math.min(maxJuan, candidates[candidates.length - 1].juan));
-        return startJuan <= endJuan ? [startJuan, endJuan] : [endJuan, startJuan];
-      }
-
-      // No juan start year falls within range; pick the closest juan to start boundary.
-      const target = startY ?? endY ?? 0;
-      let best = juanStartYearPairs[0];
-      for (const p of juanStartYearPairs) {
-        if (Math.abs(p.year - target) < Math.abs(best.year - target)) best = p;
-      }
-      const j = Math.max(1, Math.min(maxJuan, best.juan));
-      return [j, j];
+      if (!juanYearIndex) return null;
+      const result = juansOverlappingYears(juanYearIndex, normalizeYearRange(range));
+      return result ? normalizeJuanRange(result, maxJuan) : null;
     },
-    [juanStartYearPairs, normalizeYearRange]
+    [juanYearIndex, normalizeYearRange, normalizeJuanRange]
   );
 
   // Keep latest derived arrays in refs so URL-sync effect doesn't depend on them
@@ -133,6 +103,8 @@ function App() {
   // Keep local state in sync when the user navigates Back/Forward.
   useEffect(() => {
     const ctx = parseUrlGlobalContext(searchParams, 294);
+    // Browser Back/Forward is an external navigation event; restore the local view.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setActiveTab(ctx.tab);
     
     // PERFORMANCE CRITICAL: Only update juanRange/timeRange if values actually changed.
@@ -175,7 +147,7 @@ function App() {
           id: ev.id,
           name: ev.name,
           time: ev.time,
-          timeNumeric: ev.time_start,
+          timeNumeric: ev.time_start ?? null,
           location: ev.location,
           participants: Array.from(ev.participants || []),
           description: ev.description,
@@ -192,7 +164,7 @@ function App() {
     }
 
     if (selection.type === 'role') {
-      const role = kb.roles?.[selection.id];
+      const role = kb.roles?.[resolveRoleId(kb, selection.id) ?? selection.id];
       if (role) {
         setSelectedRole({
           id: role.id,
@@ -212,8 +184,8 @@ function App() {
     }
 
     if (selection.type === 'location') {
-      const loc = kb.locations?.[selection.id];
-      if (loc) setSelectedLocation(loc);
+      const loc = kb.locations?.[selection.id] ?? kb.locations?.[kb.name_to_location_id?.[selection.id]];
+      setSelectedLocation(loc ?? null);
       setSelectedEvent(null);
       setSelectedRole(null);
       setSelectedRelationPair(null);
@@ -225,8 +197,8 @@ function App() {
       const currentLinks = roleLinksRef.current;
       const currentRoles = rolesRef.current;
       const relations = currentLinks.filter(link => {
-        const linkSourceId = typeof link.source === 'object' ? (link.source as any).id : link.source;
-        const linkTargetId = typeof link.target === 'object' ? (link.target as any).id : link.target;
+        const linkSourceId = link.source;
+        const linkTargetId = link.target;
         return (
           (linkSourceId === selection.sourceId && linkTargetId === selection.targetId) ||
           (linkSourceId === selection.targetId && linkTargetId === selection.sourceId)
@@ -286,19 +258,18 @@ function App() {
 
   // Handler for focusing on a node in the graph (from detail panels)
   const handleFocusNode = useCallback((entityName: string) => {
-    // Switch to network tab and focus on the node
-    setActiveTab('network');
-    setFocusNodeId(entityName);
-
+    const target = roleNavigation(kb, entityName, juanRange, timeRange, new Set(roles.map(r => r.id)));
+    if (!target) return;
+    // A single history entry restores the location and its filters on Back.
     const next = writeUrlGlobalContext(searchParams, {
       tab: 'network',
-      juanRange,
-      yearRange: timeRange,
-      focusRoleId: entityName,
-      selection: { type: 'role', id: entityName },
+      juanRange: target.juanRange,
+      yearRange: target.yearRange,
+      focusRoleId: target.id,
+      selection: { type: 'role', id: target.id },
     });
     setSearchParams(next, { replace: false });
-  }, [searchParams, setSearchParams, juanRange, timeRange]);
+  }, [kb, roles, searchParams, setSearchParams, juanRange, timeRange]);
 
   // Handler for navigating to map (optionally focusing a specific location)
   const handleNavigateToMap = useCallback((focusLocationId?: string) => {
@@ -324,8 +295,8 @@ function App() {
   const handleLinkClick = useCallback((sourceId: string, targetId: string) => {
     // Find all relations between these two nodes (in both directions)
     const relations = roleLinks.filter(link => {
-      const linkSourceId = typeof link.source === 'object' ? (link.source as any).id : link.source;
-      const linkTargetId = typeof link.target === 'object' ? (link.target as any).id : link.target;
+      const linkSourceId = link.source;
+      const linkTargetId = link.target;
       return (linkSourceId === sourceId && linkTargetId === targetId) ||
              (linkSourceId === targetId && linkTargetId === sourceId);
     });
@@ -363,18 +334,7 @@ function App() {
     });
   }, [timelineEvents, timeRange]);
 
-  const filteredLocations = useMemo(() => {
-    // `locations` is already juanRange-filtered by the unified data hook.
-    if (timeRange[0] === null && timeRange[1] === null) return locations;
-
-    const namesInRange = new Set(
-      filteredEvents
-        .map((e) => e.location)
-        .filter((loc): loc is string => typeof loc === 'string' && loc.length > 0)
-    );
-    if (namesInRange.size === 0) return [];
-    return locations.filter((loc) => namesInRange.has(loc.canonical_name));
-  }, [locations, filteredEvents, timeRange]);
+  const filteredLocations = locations;
 
   // Handler for clicking a location name (from detail panels) - opens location detail
   const handleLocationNameClick = useCallback((locationName: string) => {
@@ -426,7 +386,7 @@ function App() {
       .sort((a, b) => b.count - a.count);
   }, [roles]);
 
-  if (loading) {
+  if (loading || yearsLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#faf8f5]">
         <div className="text-center">
@@ -438,14 +398,14 @@ function App() {
     );
   }
 
-  if (error) {
+  if (error || yearsError) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-[#faf8f5]">
         <div className="text-center text-red-600">
           <p className="text-xl mb-2">加载失败</p>
-          <p className="text-sm">{error}</p>
+          <p className="text-sm">{error || yearsError}</p>
           <p className="text-sm mt-4 text-gray-500">
-            请确保数据文件已放置在 public/data/ 目录下
+            运行时数据尚未准备好，请按项目 README 的本地启动步骤生成数据后刷新。
           </p>
         </div>
       </div>
@@ -467,7 +427,12 @@ function App() {
         <div className="max-w-7xl mx-auto px-4 py-6 flex items-start justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold">资治通鉴可视化系统</h1>
-            <p className="text-[#d4a574] mt-1">基于统一知识库</p>
+            <p className="text-[#d4a574] mt-1">{kb?.data_mode === 'demo' ? '样例预览' : '基于统一知识库'}</p>
+            {!!kb?.extraction_models?.length && <p className="text-xs mt-1 text-amber-100">抽取模型：{kb.extraction_models.join(' · ')}</p>}
+            {kb?.data_notice && <p className="text-sm mt-2 max-w-3xl">{kb.data_notice}</p>}
+            {kb?.data_coverage && <p className="text-sm mt-2 text-amber-100">
+              {kb.data_coverage.map(item => `卷${item.juan}：${item.processed}/${item.total}${item.complete ? ' ✓' : ''}`).join(' · ')}
+            </p>}
           </div>
 
           <div className="pt-1">
@@ -484,6 +449,11 @@ function App() {
           {/* Sidebar with filters */}
           <div className="lg:col-span-1">
             <FilterControls
+              onPreset={(juans, years) => {
+                setJuanRange(juans);
+                setTimeRange(years);
+                updateUrlContext({ juanRange: juans, yearRange: years }, { replace: false });
+              }}
               juanRange={juanRange}
               onJuanRangeChange={(range) => {
                 const nextJuanRange = normalizeJuanRange(range, 294);
@@ -556,10 +526,10 @@ function App() {
 
             {/* Stats */}
             <div className="bg-white rounded-lg shadow-md p-4 mt-4">
-              <h3 className="text-lg font-bold text-[#2c1810] mb-3">数据统计</h3>
+              <h3 className="text-lg font-bold text-[#2c1810] mb-3">当前筛选</h3>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-gray-600">人物数量：</span>
+                  <span className="text-gray-600">关系网人物：</span>
                   <span className="font-semibold">{roles.length}</span>
                 </div>
                 <div className="flex justify-between">
@@ -571,10 +541,11 @@ function App() {
                   <span className="font-semibold">{filteredLocations.length}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-gray-600">关系数量：</span>
+                  <span className="text-gray-600">人物间关系：</span>
                   <span className="font-semibold">{roleLinks.length}</span>
                 </div>
               </div>
+              <p className="text-xs text-gray-500 mt-3">关系网仅显示人物之间的关系及相连人物。国家、组织和未连线人物不计入此处。</p>
             </div>
           </div>
 
@@ -675,6 +646,7 @@ function App() {
               )}
 
               {activeTab === 'map' && (
+                <Suspense fallback={<p className="p-6 text-gray-500">正在加载地图…</p>}>
                 <MapView
                   locations={filteredLocations}
                   eventsInRange={filteredEvents}
@@ -685,6 +657,7 @@ function App() {
                     setSelectedLocation(loc);
                   }}
                 />
+                </Suspense>
               )}
             </div>
           </div>
@@ -754,7 +727,7 @@ function App() {
             setSearchParams(next, { replace: false });
           }}
           onEntityClick={handleFocusNode}
-          onNavigateToMap={selectedLocation.coordinates ? () => handleNavigateToMap(selectedLocation.id) : undefined}
+          onNavigateToMap={hasMapPosition(selectedLocation) ? () => handleNavigateToMap(selectedLocation.id) : undefined}
           kb={kb}
           availableRoleIds={availableRoleIds}
         />

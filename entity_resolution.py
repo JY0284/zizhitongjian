@@ -8,8 +8,9 @@ This module provides the core logic for:
 """
 
 import json
+import copy
 import re
-from collections import defaultdict
+from collections import Counter, defaultdict
 from typing import Dict, List, Set, Optional, Tuple
 from pathlib import Path
 from datetime import datetime
@@ -456,7 +457,6 @@ class EntityResolver:
             alias_norm = self._normalize_name(alias)
             if alias_norm and self._is_valid_alias_for_person(name, alias_norm):
                 self._union(name, alias_norm)
-                self.role_occurrences[alias_norm].append((role, occurrence))
 
     def add_polity(self, polity: Polity, juan_index: int, segment_index: int,
                    chunk_index: int, source_sentence: str = "") -> None:
@@ -475,7 +475,6 @@ class EntityResolver:
             alias_norm = self._normalize_name(alias)
             if alias_norm:
                 self._polity_union(name, alias_norm)
-                self.polity_occurrences[alias_norm].append((polity, occurrence))
 
         # Also unify common "X国" -> "X" form
         if name.endswith("国") and len(name) <= 4:
@@ -501,7 +500,6 @@ class EntityResolver:
             alias_norm = self._normalize_name(alias)
             if alias_norm:
                 self._school_union(name, alias_norm)
-                self.school_occurrences[alias_norm].append((school, occurrence))
 
         # Unify "X家" -> "X" form (e.g. 儒家 -> 儒)
         if name.endswith("家") and len(name) <= 4:
@@ -527,7 +525,6 @@ class EntityResolver:
             alias_norm = self._normalize_name(alias)
             if alias_norm:
                 self._organization_union(name, alias_norm)
-                self.organization_occurrences[alias_norm].append((organization, occurrence))
     
     def add_location(self, location: Location, juan_index: int, 
                      segment_index: int, chunk_index: int) -> None:
@@ -548,7 +545,6 @@ class EntityResolver:
             # For locations, we still block generic terms but allow country names
             if alias_norm and alias_norm not in self.BLOCKED_ALIASES:
                 self._union(name, alias_norm)
-                self.location_occurrences[alias_norm].append((location, occurrence))
     
     def add_event(self, event: Event, juan_index: int, segment_index: int) -> None:
         """Add an event occurrence for later merging."""
@@ -605,7 +601,7 @@ class EntityResolver:
             juans_appeared: Set[int] = set()
             related_entities: Set[str] = set()
             
-            for name in name_group:
+            for name in sorted(name_group):
                 all_names.add(name)
                 for role, occurrence in self.role_occurrences[name]:
                     all_occurrences.append(occurrence)
@@ -626,7 +622,7 @@ class EntityResolver:
             # Create unified role
             unified = UnifiedRole(
                 id=canonical_name,
-                canonical_name=canonical_name,
+                canonical_name=self._display_name(all_names, self.role_occurrences),
                 all_names=all_names,
                 description=self._select_best_description(all_descriptions),
                 original_descriptions=unique_original[:10],  # Keep top 10
@@ -643,6 +639,13 @@ class EntityResolver:
             unified_roles[canonical_name] = unified
         
         return unified_roles
+
+    def _display_name(self, names, occurrences):
+        """Choose an attested full name; union roots are only internal IDs."""
+        counts = Counter({name: len(occurrences.get(name, [])) for name in names})
+        usable = [name for name in counts if name not in self.BLOCKED_ALIASES]
+        full_names = [name for name in usable if len(name) > 1 and '〔卷' not in name]
+        return min(full_names or usable or list(counts), key=lambda name: (-counts[name], len(name), name))
     
     def resolve_locations(self) -> Dict[str, UnifiedLocation]:
         """Resolve all locations into unified entities."""
@@ -834,10 +837,20 @@ class EntityResolver:
         return unified_organizations
     
     def resolve_events(self) -> Dict[str, UnifiedEvent]:
-        """Resolve events with the same name."""
+        """Merge mentions within the same dated segment, not across history."""
         unified_events: Dict[str, UnifiedEvent] = {}
+
+        grouped = {}
+        for name, mentions in self.event_occurrences.items():
+            by_segment = defaultdict(list)
+            for event, juan, segment in mentions:
+                by_segment[(juan, segment)].append((event, juan, segment))
+            for (juan, segment), items in sorted(by_segment.items()):
+                event_id = name if len(by_segment) == 1 else f"{name}@{juan}-{segment}"
+                grouped[event_id] = items
         
-        for event_name, occurrences in self.event_occurrences.items():
+        for event_id, occurrences in grouped.items():
+            event_name = occurrences[0][0].name
             all_participants: Set[str] = set()
             source_juans: Set[int] = set()
             source_segments: List[str] = []
@@ -866,23 +879,17 @@ class EntityResolver:
             time_str = times[0] if times else None
             time_numeric = self._parse_year(time_str)
 
-            # Impute numeric year from segment_year_index when missing
-            imputed_years: List[int] = []
-            if time_numeric is None:
-                for _, juan_idx, seg_idx in occurrences:
-                    seg_key = f"{juan_idx}-{seg_idx}"
-                    year = self.segment_year_index.get(seg_key)
-                    if year is not None:
-                        imputed_years.append(int(year))
+            # A chapter can quote older events. Its year dates the mention,
+            # not necessarily the event; preserve uncertainty instead of guessing.
             
             unified = UnifiedEvent(
-                id=event_name,
+                id=event_id,
                 name=event_name,
                 time=time_str,
                 time_start=time_numeric,
                 time_end=time_numeric,
-                imputed_time_start=min(imputed_years) if imputed_years else None,
-                imputed_time_end=max(imputed_years) if imputed_years else None,
+                imputed_time_start=None,
+                imputed_time_end=None,
                 location=locations[0] if locations else None,
                 participants=all_participants,
                 description=self._select_best_description(descriptions),
@@ -893,7 +900,7 @@ class EntityResolver:
                 action_count=len(occurrences)
             )
             
-            unified_events[event_name] = unified
+            unified_events[event_id] = unified
         
         return unified_events
     
@@ -909,6 +916,7 @@ class EntityResolver:
             source_juans: Set[int] = set()
             times: List[str] = []
             years: List[int] = []
+            occurrences = []
             
             for action in actions:
                 if action.action:
@@ -920,11 +928,14 @@ class EntityResolver:
                     times.append(action.time)
 
                 year = self._parse_year(action.time)
-                if year is None:
-                    seg_key = f"{action.juan_index}-{action.segment_index}"
-                    year = self.segment_year_index.get(seg_key)
+                # A relative date or undated relationship is not an exact year.
+                # Source-year filtering must not turn "one year later" into now.
                 if year is not None:
                     years.append(int(year))
+                occurrences.append({"juan_index": action.juan_index, "segment_index": action.segment_index,
+                                    "sentence_indexes": action.sentence_indexes_in_segment,
+                                    "year": year, "time": action.time, "action": action.action,
+                                    "context": action.context})
             
             # Find most common action type
             action_counts = defaultdict(int)
@@ -944,6 +955,7 @@ class EntityResolver:
                 first_interaction_year=min(years) if years else None,
                 last_interaction_year=max(years) if years else None,
                 contexts=contexts[:5],  # Keep top 5 contexts
+                occurrences=occurrences,
                 source_juans=source_juans
             )
             
@@ -986,6 +998,12 @@ class EntityResolver:
         locations = self.resolve_locations()
         events = self.resolve_events()
         relations = self.resolve_relations()
+
+        for collection in [roles, polities, schools, organizations, locations]:
+            for entity in collection.values():
+                for occurrence in entity.occurrences:
+                    if "year" in type(occurrence).model_fields:
+                        occurrence.year = self.segment_year_index.get(f"{occurrence.juan_index}-{occurrence.segment_index}")
         
         # Build indexes
         name_to_role_id: Dict[str, str] = {}
@@ -1089,6 +1107,36 @@ class EntityResolver:
         )
 
 
+def scope_ambiguous_people(extraction):
+    """Keep unresolved people and generic groups local to their source passage.
+
+    Only changes the derived view; the extraction and source records stay intact.
+    """
+    titles = EntityResolver.BLOCKED_ALIASES | {"公主", "王太后", "卫侯", "卫君", "燕公", "蜀王",
+        "楚太子", "秦太子", "侍从", "军吏", "算卦人", "张仪的手下人"}
+    generic_groups = {"群臣", "国中贵族", "各国诸侯", "各国", "诸侯", "诸侯国",
+                      "臣下", "众人", "百姓", "人民", "民众", "贵族"}
+    result = copy.deepcopy(extraction)
+    replacements = {}
+    for entity in result.get("entities", []):
+        is_person = entity.get("entity_type") in (None, "person")
+        for name in [entity['name'], *entity.get('alias', [])]:
+            ambiguous_person = is_person and (name in titles or name.endswith(('使者', '使臣'))
+                or "未具名" in name or (len(name) == 1 and name not in EntityResolver.COUNTRY_NAMES))
+            if ambiguous_person or (not is_person and name in generic_groups):
+                replacements[name] = (f"{name}〔卷{result['juan_index']}·段{result['segment_index']}"
+                                      f"·片段{result['chunk_start_index'] + 1}〕")
+    for entity in result.get("entities", []):
+        entity["name"] = replacements.get(entity["name"], entity["name"])
+        entity["alias"] = [replacements.get(alias, alias) for alias in entity.get("alias", [])]
+    for field, references in [("events", ["participants"]), ("locations", ["related_entities"]),
+                              ("relations", ["from_roles", "to_roles"])]:
+        for item in result.get(field, []):
+            for reference in references:
+                item[reference] = [replacements.get(name, name) for name in item.get(reference, [])]
+    return result
+
+
 def load_and_resolve(store_dir: str, segment_year_index_path: Optional[str] = None) -> UnifiedKnowledgeBase:
     """
     Load all juan data files and resolve into unified knowledge base.
@@ -1101,6 +1149,8 @@ def load_and_resolve(store_dir: str, segment_year_index_path: Optional[str] = No
     """
     store_path = Path(store_dir)
     resolver = EntityResolver()
+    from zztj_pipeline.source_review import aligned_sources, apply_reviewed_identity, apply_reviewed_place_aliases
+    original_sources = aligned_sources(store_path)
 
     if segment_year_index_path:
         try:
@@ -1117,13 +1167,17 @@ def load_and_resolve(store_dir: str, segment_year_index_path: Optional[str] = No
             print(f"Segment year index not found: {segment_year_index_path} (skipping)")
     
     # Load all juan files
-    for juan_file in sorted(store_path.glob("juan_*.json")):
+    for juan_file in sorted(store_path.glob("juan_*.json"), key=lambda path: int(path.stem.split('_')[1])):
         print(f"Processing {juan_file.name}...")
         
         with open(juan_file, 'r', encoding='utf-8') as f:
             juan_data = json.load(f)
         
-        for chunk_key, extraction in juan_data.items():
+        for chunk_key, extraction in sorted(juan_data.items(), key=lambda pair: (
+            pair[1]['segment_index'], pair[1]['chunk_start_index'])):
+            extraction = apply_reviewed_identity(extraction, original_sources.get(chunk_key, {}).get('original', ''))
+            extraction = apply_reviewed_place_aliases(extraction)
+            extraction = scope_ambiguous_people(extraction)
             juan_idx = extraction.get('juan_index', 0)
             seg_idx = extraction.get('segment_index', 0)
             chunk_idx = extraction.get('chunk_start_index', 0)

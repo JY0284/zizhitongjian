@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import type { UnifiedKnowledgeBase } from '../types/unified';
+import { fetchRuntimeData } from '../utils/runtimeData';
 import {
   unifiedEventsToTimeline,
   unifiedLocationsToList,
@@ -16,18 +17,21 @@ export function useUnifiedKnowledgeBase() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const controller = new AbortController();
     async function loadData() {
       try {
-        const response = await fetch('/data/unified_knowledge.json');
-        
-        if (!response.ok) {
-          throw new Error(`Failed to load unified knowledge base: ${response.status}`);
+        const data = await fetchRuntimeData<UnifiedKnowledgeBase>(
+          `${import.meta.env.BASE_URL}data/unified_knowledge.json`, controller.signal);
+        for (const key of ['roles', 'locations', 'events', 'relations', 'name_to_role_id', 'name_to_location_id'] as const) {
+          if (!data[key] || typeof data[key] !== 'object' || Array.isArray(data[key])) {
+            throw new Error(`统一知识库字段 ${key} 无效，请重新构建数据。`);
+          }
         }
-        
-        const data = await response.json();
+        if (controller.signal.aborted) return;
         setKb(data);
         setLoading(false);
       } catch (err) {
+        if (controller.signal.aborted) return;
         console.error('Error loading unified knowledge base:', err);
         setError(err instanceof Error ? err.message : 'Unknown error loading data');
         setLoading(false);
@@ -35,6 +39,7 @@ export function useUnifiedKnowledgeBase() {
     }
 
     loadData();
+    return () => controller.abort();
   }, []);
 
   return { kb, loading, error };
@@ -60,8 +65,8 @@ export function useUnifiedVisualizationData(
 
   const locations = useMemo(() => {
     if (!kb) return [];
-    return unifiedLocationsToList(kb, juanRange);
-  }, [kb, juanRange]);
+    return unifiedLocationsToList(kb, juanRange, yearRange);
+  }, [kb, juanRange, yearRange]);
 
   const powerDistribution = useMemo(() => {
     if (!kb) return [];

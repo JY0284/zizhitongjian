@@ -1,230 +1,124 @@
-# %% [markdown]
-# # AI辅助资治通鉴知识图谱挖掘&构建
+"""Bounded, resumable knowledge extraction. Run --dry-run before a real batch."""
+from __future__ import annotations
 
-# %%
+import argparse
 import json
-
-from IPython.display import Markdown
-
-# %%
-testing_mode = False  # Set to False to process all segments
-book = json.load(open("adapted_book.json", "r"))
-book[0]
-
-# %%
-from langchain_community.cache import SQLiteCache
-from langchain_core.globals import set_llm_cache
-from langchain_core.messages import HumanMessage, SystemMessage
-
-set_llm_cache(SQLiteCache(database_path=".langchain.db"))
-
-# %%
 import os
-
-from langchain_deepseek import ChatDeepSeek
-from openai import OpenAI
-
-# Create a ChatDeepSeek instance
-chat_model = ChatDeepSeek(
-    model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-    temperature=0,
-    # max_tokens=None,
-    timeout=None,
-    # max_retries=2,
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    cache=True,
-)
-
-# Define a conversation
-conversation = [
-    SystemMessage("You are a helpful assistant."),
-    HumanMessage("Hello!"),
-]
-
-# %%
-# Remove environment variables if they exist
-os.environ.pop("HTTP_PROXY", None)
-os.environ.pop("http_proxy", None)
-os.environ.pop("HTTPS_PROXY", None)
-os.environ.pop("https_proxy", None)
-
-# %%
-sys_extraction_prompt = open("prompts/sys_entity_relation_extraction.md", "r").read()
-
-chat_model = ChatDeepSeek(
-    # Use deepseek-v4-pro for reasoning-heavy extraction passes.
-    model=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"),
-    temperature=0.1,
-    max_tokens=None,
-    timeout=None,
-    max_retries=0,
-    api_key=os.getenv("DEEPSEEK_API_KEY"),
-    cache=True,
-    disable_streaming=True,
-)
-
-# %%
-import os
-import re
-import json
-import datetime
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from tqdm import tqdm
-from model.extraction import ExtractionResult, EntityRelationExtraction
-from knowledge_store import KnowledgeStore, ChunkExtraction
+from pathlib import Path
+
+from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_deepseek import ChatDeepSeek
+
+from knowledge_store import ChunkExtraction, KnowledgeStore
+from model.extraction import EntityRelationExtraction
+from scripts.smoke_deepseek_extraction import build_input, load_book, load_dotenv_if_present
 from zztj_pipeline.llm_json import extract_json_from_response
 
-# Initialize Knowledge Store
-store = KnowledgeStore()
-print(store.summary())
+PROJECT_ROOT = Path(__file__).resolve().parent
 
 
+def positive_int(value: str) -> int:
+    result = int(value)
+    if result < 1:
+        raise argparse.ArgumentTypeError("must be at least 1")
+    return result
 
-# Chunking configuration
-CHUNK_SIZE = 1
-CONTEXT_SIZE = 5
 
-# Get unprocessed chunks
-unprocessed_chunks = store.get_unprocessed_chunks(book, chunk_size=CHUNK_SIZE)
-print(f"Found {len(unprocessed_chunks)} unprocessed chunks.")
-
-# Filter to only handle 1 segment for testing
-if unprocessed_chunks and False:
-    first_juan = unprocessed_chunks[0][0]
-    first_seg = unprocessed_chunks[0][1]
-    unprocessed_chunks = [c for c in unprocessed_chunks if c[0] == first_juan and c[1] == first_seg]
-    print(f"Testing mode: Processing only Juan {first_juan}, Seg {first_seg} ({len(unprocessed_chunks)} chunks).")
-
-def process_chunk(chunk_info):
-    juan_idx, seg_idx, chunk_start = chunk_info
-    
-    # Find the segment data
-    juan_data = next(j for j in book if j["juan_index"] == juan_idx)
-    segment_data = next(s for s in juan_data["segments"] if s["segment_index"] == seg_idx)
-    sentences = segment_data['sentences']
-    total_sentences = len(sentences)
-    
-    chunk_end = min(chunk_start + CHUNK_SIZE, total_sentences)
-    chunk_sentences = sentences[chunk_start : chunk_end]
-    
-    # Context sentences
-    context_start = max(0, chunk_start - CONTEXT_SIZE)
-    context_sentences = sentences[context_start : chunk_start]
-
-    # Format sentences with ORIGINAL indexes
-    indexed_target_sentences = [f"[{chunk_start + j}]{sent}" for j, sent in enumerate(chunk_sentences)]
-    indexed_context_sentences = [f"[{context_start + j}]{sent}" for j, sent in enumerate(context_sentences)]
-    
-    input_data = {
-        "segment_index": seg_idx,
-        "segment_start_time": segment_data['segment_start_time'],
-        "context_sentences": indexed_context_sentences,
-        "target_sentences": indexed_target_sentences,
-        "note": f"Processing sentences {chunk_start} to {chunk_end - 1} of {total_sentences}."
-    }
-    
-    # Define a conversation
-    conversation = [
-        SystemMessage(sys_extraction_prompt),
-        HumanMessage(json.dumps(input_data, ensure_ascii=False, indent=2)),
-    ]
-    
-    # Logging Request
-    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    log_prefix = f"debug_logs/req_{timestamp}_juan{juan_idx}_seg{seg_idx}_chunk{chunk_start}"
-    
-    with open(f"{log_prefix}_input.txt", "w") as f:
-        f.write(sys_extraction_prompt + "\n\n" + json.dumps(input_data, ensure_ascii=False, indent=2))
-        
-    max_retries = 3
-    last_exception = None
-    
-    for attempt in range(max_retries):
+def extract_chunk(chunk_info, segments, model, prompt, chunk_size, context_size, attempts):
+    """Workers perform requests; the main thread alone persists their results."""
+    juan, segment_index, start = chunk_info
+    segment = segments[(juan, segment_index)]
+    input_data, sentences, end = build_input(segment, segment_index, start, chunk_size, context_size)
+    input_data["juan_index"] = juan
+    input_data["source_constraints"] = (
+        "事实字段仅根据目标句；上下文只用于消歧。未明示事件/动作发生地点时 location 必须为 JSON null，"
+        "不能把人物所属国家或势力自动当作事件发生地。未知可选值用 JSON null，禁止字符串 None/null。"
+        "所有 sentence_indexes_in_segment 只引用 target_sentences 的索引。"
+        "original_description_in_book 必须是目标句中的逐字引文。背景知识仅放 description/background，"
+        "不得据此新增原文没有的动作、参与者、时间或地点。"
+    )
+    for attempt in range(attempts):
         try:
-            # Get a response from the model
-            response = chat_model.invoke(conversation)
-            
-            # Logging Response
-            suffix = f"_retry{attempt}" if attempt > 0 else ""
-            with open(f"{log_prefix}_output{suffix}.txt", "w") as f:
-                f.write(response.content)
-                
-            try:
-                er_data = extract_json_from_response(response.content)
-            except Exception as e:
-                with open(f"{log_prefix}_error{suffix}.txt", "w") as f:
-                    f.write(f"Error parsing JSON: {e}\n\nContent:\n{response.content}")
-                raise e
-
-            llm_extraction = EntityRelationExtraction(**er_data)
-            
-            # Post-process to add context info
-            for entity in llm_extraction.entities:
-                entity.juan_index = juan_idx
-                entity.segment_index = seg_idx
-                
-            for location in llm_extraction.locations:
-                location.juan_index = juan_idx
-                location.segment_index = seg_idx
-                
-            for event in llm_extraction.events:
-                event.juan_index = juan_idx
-                event.segment_index = seg_idx
-                
-            for relation in llm_extraction.relations:
-                relation.juan_index = juan_idx
-                relation.segment_index = seg_idx
-                
-            # Extract token usage
-            token_usage = response.response_metadata.get("token_usage", {})
-            prompt_tokens = token_usage.get("prompt_tokens", 0)
-            completion_tokens = token_usage.get("completion_tokens", 0)
-            total_tokens = token_usage.get("total_tokens", 0)
-
-            # Create ChunkExtraction object
-            chunk_extraction = ChunkExtraction(
-                juan_index=juan_idx,
-                segment_index=seg_idx,
-                chunk_start_index=chunk_start,
-                chunk_end_index=chunk_end,
-                segment_start_time=segment_data['segment_start_time'],
-                source_sentences=chunk_sentences,
-                entities=llm_extraction.entities,
-                locations=llm_extraction.locations,
-                events=llm_extraction.events,
-                relations=llm_extraction.relations,
-                model_name=chat_model.model_name,
-                prompt_tokens=prompt_tokens,
-                completion_tokens=completion_tokens,
-                total_tokens=total_tokens
+            response = model.invoke([
+                SystemMessage(prompt),
+                HumanMessage(json.dumps(input_data, ensure_ascii=False)),
+            ])
+            extraction = EntityRelationExtraction.model_validate(extract_json_from_response(response.content))
+            for item in [*extraction.entities, *extraction.locations, *extraction.events, *extraction.relations]:
+                item.juan_index = juan
+                item.segment_index = segment_index
+            usage = response.response_metadata.get("token_usage", {})
+            return ChunkExtraction(
+                juan_index=juan, segment_index=segment_index,
+                chunk_start_index=start, chunk_end_index=end,
+                segment_start_time=segment["segment_start_time"], source_sentences=sentences,
+                entities=extraction.entities, locations=extraction.locations,
+                events=extraction.events, relations=extraction.relations,
+                model_name=model.model_name,
+                prompt_tokens=usage.get("prompt_tokens", 0),
+                completion_tokens=usage.get("completion_tokens", 0),
+                total_tokens=usage.get("total_tokens", 0),
             )
-            
-            # Save to store
-            store.save_chunk(chunk_extraction)
-            return True, f"Saved chunk {chunk_start} for Juan {juan_idx}, Seg {seg_idx}."
-            
-        except Exception as e:
-            last_exception = e
-            print(f"Attempt {attempt + 1}/{max_retries} failed for chunk {chunk_start}: {e}")
-            time.sleep(1) # Wait a bit before retrying
-            
-    return False, f"Error processing chunk {chunk_start} for Juan {juan_idx}, Seg {seg_idx} after {max_retries} attempts: {last_exception}"
+        except Exception:
+            if attempt + 1 == attempts:
+                raise
+            time.sleep(min(2 ** attempt, 8))
 
-# Process chunks with ThreadPoolExecutor
-MAX_WORKERS = 16 # Adjust based on rate limits
 
-with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-    futures = {executor.submit(process_chunk, chunk): chunk for chunk in unprocessed_chunks}
-    
-    for future in tqdm(as_completed(futures), total=len(unprocessed_chunks), desc="Processing Chunks"):
-        success, message = future.result()
-        if not success:
-            print(message)
+def main(argv=None) -> int:
+    load_dotenv_if_present(PROJECT_ROOT / ".env")
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--book", type=Path, default=PROJECT_ROOT / "adapted_book.json")
+    parser.add_argument("--store-dir", type=Path, default=PROJECT_ROOT / "data/store")
+    parser.add_argument("--juan-start", type=positive_int, default=1)
+    parser.add_argument("--juan-end", type=positive_int, default=294)
+    bounds = parser.add_mutually_exclusive_group()
+    bounds.add_argument("--limit", type=positive_int, default=1, help="Maximum pending chunks (default: 1)")
+    bounds.add_argument("--all", action="store_true", help="Process all pending chunks in the selected range")
+    parser.add_argument("--workers", type=positive_int, default=4)
+    parser.add_argument("--attempts", type=positive_int, default=3)
+    parser.add_argument("--timeout", type=positive_int, default=120, help="Request timeout in seconds")
+    parser.add_argument("--dry-run", action="store_true", help="Show pending work without API calls")
+    parser.add_argument("--model", default=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"))
+    args = parser.parse_args(argv)
+    if args.juan_start > args.juan_end:
+        parser.error("--juan-start must not exceed --juan-end")
+    if not args.dry_run and not os.getenv("DEEPSEEK_API_KEY"):
+        parser.error("DEEPSEEK_API_KEY is missing. Set it in .env or use --dry-run.")
 
-print("Processing complete.")
-print(store.summary())
+    book = [j for j in load_book(args.book) if args.juan_start <= j["juan_index"] <= args.juan_end]
+    if not book:
+        parser.error("No volumes in the selected range")
+    # Keep chunk size stable so cached sentence offsets retain their meaning.
+    store = KnowledgeStore(str(args.store_dir))
+    pending = store.get_unprocessed_chunks(book, chunk_size=1)
+    selected = pending if args.all else pending[:args.limit]
+    print(f"Pending: {len(pending)} chunks; selected: {len(selected)}; model: {args.model}")
+    if args.dry_run or not selected:
+        return 0
 
-# %%
-# Dump the Pydantic model to JSON (Example of exporting all data)
-# json.dump(store._data, open('data/knowledge_store_dump.json', 'w'), ensure_ascii=False, indent=2)
+    segments = {(j["juan_index"], s["segment_index"]): s for j in book for s in j["segments"]}
+    prompt = (PROJECT_ROOT / "prompts/sys_entity_relation_extraction.md").read_text(encoding="utf-8")
+    model = ChatDeepSeek(model=args.model, api_key=os.environ["DEEPSEEK_API_KEY"],
+                         temperature=0.1, timeout=args.timeout, max_retries=0,
+                         cache=False, disable_streaming=True)
+    failures = 0
+    with ThreadPoolExecutor(max_workers=args.workers) as executor:
+        futures = {
+            executor.submit(extract_chunk, chunk, segments, model, prompt, 1, 5, args.attempts): chunk
+            for chunk in selected
+        }
+        for future in as_completed(futures):
+            try:
+                store.save_chunk(future.result())
+            except Exception as exc:
+                failures += 1
+                print(f"Failed {futures[future]}: {type(exc).__name__}: {exc}")
+    print(f"Saved: {len(selected) - failures}; failed: {failures}. Rerun to resume pending chunks.")
+    return 1 if failures else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

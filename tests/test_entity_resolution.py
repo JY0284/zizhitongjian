@@ -13,8 +13,59 @@ from model.role import Role
 from model.polity import Polity
 from model.school import School
 from model.organization import Organization
+from model.event import Event
 from model.unified import EntityOccurrence
-from entity_resolution import EntityResolver
+from entity_resolution import EntityResolver, scope_ambiguous_people
+
+
+def test_display_name_prefers_attested_full_name_over_union_root():
+    resolver = EntityResolver()
+    resolver.add_role(Role(name="孔伋", alias=["孔", "子思"]), 1, 1, 0)
+    resolver.add_role(Role(name="孔伋", alias=["子思"]), 1, 2, 0)
+    roles = resolver.resolve_roles()
+    assert len(roles) == 1
+    role = next(iter(roles.values()))
+    assert role.canonical_name == "孔伋"
+    assert role.id == "孔"  # Preserve existing links and bookmarks.
+    assert "子思" in role.all_names
+    assert role.total_mentions == 2
+    assert len(role.occurrences) == 2
+
+
+def test_repeated_event_names_keep_their_dates_and_sources():
+    resolver = EntityResolver()
+    resolver.add_event(Event(name="日食", time="前397年", description="日食"), 1, 7)
+    resolver.add_event(Event(name="日食", time="前375年", description="日食"), 1, 25)
+    events = resolver.resolve_events()
+    assert len(events) == 2
+    assert {event.time_start for event in events.values()} == {-397, -375}
+    assert events["日食@1-25"].source_segments == ["1-25"]
+
+
+def test_unidentified_ruler_titles_do_not_merge_across_passages():
+    source = {'juan_index': 3, 'segment_index': 2, 'chunk_start_index': 0,
+              'entities': [{'name': '秦王', 'entity_type': 'person'}, {'name': '张仪', 'entity_type': 'person'}],
+              'relations': [{'from_roles': ['秦王'], 'to_roles': ['张仪']}],
+              'events': [{'participants': ['秦王']}], 'locations': [{'related_entities': ['秦王']}]}
+    first = scope_ambiguous_people(source)
+    second = scope_ambiguous_people({**source, 'segment_index': 8})
+    title = first['entities'][0]['name']
+    assert title != second['entities'][0]['name']
+    assert first['relations'][0]['from_roles'] == first['events'][0]['participants'] == [title]
+    assert first['locations'][0]['related_entities'] == [title]
+    assert source['entities'][0]['name'] == '秦王'
+
+
+def test_truncated_surnames_do_not_bridge_an_identified_person_and_an_unknown_person():
+    resolver = EntityResolver()
+    for juan, aliases in [(1, ['子思']), (2, [])]:
+        data = scope_ambiguous_people({'juan_index': juan, 'segment_index': 1, 'chunk_start_index': 0,
+            'entities': [{'name': '孔', 'alias': aliases, 'entity_type': 'person'}]})
+        resolver.add_role(Role(**data['entities'][0]), juan, 1, 0)
+    roles = list(resolver.resolve_roles().values())
+    assert len(roles) == 2
+    assert '子思' in {role.canonical_name for role in roles}
+    assert any('卷2' in role.canonical_name for role in roles)
 
 
 class TestEntityTypeClassification:
@@ -390,6 +441,45 @@ class TestClassificationMethods:
         assert resolver._is_organization_name("秦国") is False
         assert resolver._is_organization_name("儒家") is False
         assert resolver._is_organization_name("") is False
+
+
+def test_event_mention_year_does_not_redate_a_retrospective_story():
+    from model.event import Event
+    resolver = EntityResolver()
+    resolver.segment_year_index = {"4-25": -273}
+    resolver.add_event(Event(name="艾陵之战", time="春秋末年", description="引用旧事"), 4, 25)
+    resolver.add_event(Event(name="未定年旧事", description="引用旧事"), 4, 25)
+    for event in resolver.resolve_events().values():
+        assert event.time_start is None
+        assert event.imputed_time_start is None
+
+
+def test_relative_relation_date_does_not_use_mention_year():
+    from model.action import Action
+    resolver = EntityResolver()
+    resolver.segment_year_index = {'3-11': -310}
+    resolver.add_relation(Action(from_roles=['张仪'], to_roles=['魏国'], action='担任国相',
+        context='任国相一年后', time='一年后', juan_index=3, segment_index=11))
+    relation = next(iter(resolver.resolve_relations().values()))
+    assert relation.first_interaction_year is None
+    assert relation.occurrences[0].year is None
+
+
+def test_generic_groups_and_unnamed_envoys_do_not_merge_between_passages():
+    raw = {'juan_index': 3, 'segment_index': 8, 'chunk_start_index': 0,
+           'entities': [{'name': '楚国使者', 'entity_type': 'person'},
+                        {'name': '群臣', 'entity_type': 'organization'},
+                        {'name': '秦国', 'entity_type': 'polity'},
+                        {'name': '王太后', 'entity_type': 'person'}],
+           'events': [{'participants': ['楚国使者', '群臣', '秦国']}]}
+    first = scope_ambiguous_people(raw)
+    second = scope_ambiguous_people({**raw, 'segment_index': 11})
+    assert first['entities'][0]['name'] != second['entities'][0]['name']
+    assert first['entities'][1]['name'] != second['entities'][1]['name']
+    assert first['entities'][2]['name'] == second['entities'][2]['name'] == '秦国'
+    assert first['entities'][3]['name'] != second['entities'][3]['name']
+    assert first['events'][0]['participants'][1] == first['entities'][1]['name']
+    assert raw['entities'][1]['name'] == '群臣'
 
 
 if __name__ == "__main__":

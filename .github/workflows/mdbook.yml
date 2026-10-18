@@ -1,59 +1,67 @@
-# Sample workflow for building and deploying a mdBook site to GitHub Pages
-#
-# To get started with mdBook see: https://rust-lang.github.io/mdBook/index.html
-#
-name: Deploy mdBook site to Pages
+name: Deploy reader and explorer to Pages
 
 on:
-  # Runs on pushes targeting the default branch
   push:
     branches: ["main"]
-
-  # Allows you to run this workflow manually from the Actions tab
   workflow_dispatch:
 
-# Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
-# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
-# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
 concurrency:
-  group: "pages"
+  group: pages
   cancel-in-progress: false
 
 jobs:
-  # Build job
   build:
     runs-on: ubuntu-latest
-    env:
-      MDBOOK_VERSION: 0.4.36
     steps:
-      - uses: actions/checkout@v4
-      - name: Install mdBook
-        run: |
-          curl --proto '=https' --tlsv1.2 https://sh.rustup.rs -sSf -y | sh
-          rustup update
-          cargo install --version ${MDBOOK_VERSION} mdbook
-      - name: Setup Pages
-        id: pages
-        uses: actions/configure-pages@v5
-      - name: Build with mdBook
-        run: mdbook build
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          path: ./book
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: visualization/package-lock.json
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Verify and install the public snapshot
+        run: |
+          python scripts/validate_artifacts.py --data-dir visualization/snapshot
+          python scripts/build_pages.py --install-snapshot
+      - name: Check and build the explorer
+        working-directory: visualization
+        env:
+          VITE_BASE_PATH: /${{ github.event.repository.name }}/explore/
+        run: |
+          npm ci
+          npm test
+          npm run lint
+          npm run build
+      - name: Install the pinned mdBook release
+        env:
+          MDBOOK_VERSION: '0.4.36'
+        run: |
+          curl --fail --location --retry 3 --output /tmp/mdbook.tar.gz "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK_VERSION}/mdbook-v${MDBOOK_VERSION}-x86_64-unknown-linux-gnu.tar.gz"
+          echo '72a50f5eecefef173114b53543a968fd1e8265ef67760b9d5bb20cd7712a9511  /tmp/mdbook.tar.gz' | sha256sum --check
+          tar --extract --gzip --file /tmp/mdbook.tar.gz --directory "$RUNNER_TEMP" mdbook
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - name: Build the reader and combine both sites
+        run: python scripts/build_pages.py
+      - name: Upload the public site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: .pages-build/site
 
-  # Deployment job
   deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
-    runs-on: ubuntu-latest
-    needs: build
     steps:
       - name: Deploy to GitHub Pages
         id: deployment

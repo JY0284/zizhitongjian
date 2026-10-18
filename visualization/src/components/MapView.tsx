@@ -1,3 +1,4 @@
+import { referenceCoordinates } from '../utils/mapCoordinates';
 import { useMemo, useEffect, useRef, useState } from 'react';
 import { MapContainer, TileLayer, CircleMarker, Polyline, Popup, useMap } from 'react-leaflet';
 import type { Map as LeafletMap } from 'leaflet';
@@ -26,16 +27,17 @@ type TrajectoryPoint = {
 // Auto-fit map bounds when locations change
 function FitBounds({ locations }: { locations: UnifiedLocation[] }) {
   const map = useMap();
-  const fittedRef = useRef(false);
+  const fittedRef = useRef('');
 
   useEffect(() => {
     const withCoords = locations.filter((loc) => loc.coordinates);
     if (withCoords.length === 0) return;
-    if (fittedRef.current) return; // Only fit once initially
+    const key = withCoords.map(loc => `${loc.id}:${loc.coordinates}`).join('|');
+    if (fittedRef.current === key) return;
 
     const bounds = withCoords.map((loc) => [loc.coordinates![1], loc.coordinates![0]] as [number, number]);
     map.fitBounds(bounds, { padding: [30, 30], maxZoom: 8 });
-    fittedRef.current = true;
+    fittedRef.current = key;
   }, [locations, map]);
 
   return null;
@@ -62,7 +64,8 @@ export function MapView({
 }: MapViewProps) {
   const mapRef = useRef<LeafletMap | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [selectedLocation, setSelectedLocation] = useState<UnifiedLocation | null>(null);
+  const [showReferences, setShowReferences] = useState(true);
+  const [selection, setSelection] = useState<{ focusId: string | null | undefined; location: UnifiedLocation | null }>({ focusId: undefined, location: null });
 
   const byName = useMemo(() => {
     const m = new Map<string, UnifiedLocation>();
@@ -70,17 +73,22 @@ export function MapView({
     return m;
   }, [locations]);
 
-  const withCoords = useMemo(() => locations.filter((loc) => loc.coordinates), [locations]);
+  const verifiedLocations = useMemo(() => locations.filter(loc => loc.coordinates), [locations]);
+  const referenceLocations = useMemo(() => locations.flatMap(loc => {
+    const coords = referenceCoordinates(loc);
+    return coords ? [{ ...loc, coordinates: coords }] : [];
+  }), [locations]);
+  const withCoords = useMemo(() => [...verifiedLocations, ...(showReferences ? referenceLocations : [])],
+    [verifiedLocations, referenceLocations, showReferences]);
 
   const focusLocation = useMemo(() => {
     if (!focusLocationId) return null;
     return withCoords.find((l) => l.id === focusLocationId) ?? null;
   }, [withCoords, focusLocationId]);
 
-  useEffect(() => {
-    if (!focusLocation) return;
-    setSelectedLocation(focusLocation);
-  }, [focusLocation]);
+  const selectedId = selection.focusId === focusLocationId ? selection.location?.id : focusLocation?.id;
+  const selectedLocation = withCoords.find(loc => loc.id === selectedId) ?? null;
+  const setSelectedLocation = (location: UnifiedLocation | null) => setSelection({ focusId: focusLocationId, location });
 
   // Compute trajectory for selected role/event
   const trajectory = useMemo((): TrajectoryPoint[] => {
@@ -137,9 +145,25 @@ export function MapView({
       <div className="flex items-center justify-between mb-4 flex-shrink-0">
         <h3 className="text-lg font-bold text-[#2c1810]">历史地图</h3>
         <div className="text-sm text-gray-500">
-          {withCoords.length} 个地点
+          {verifiedLocations.length} 个已核验 · {referenceLocations.length} 个现代参考 · 共 {locations.length} 个地点
         </div>
       </div>
+
+      {referenceLocations.length > 0 && (
+        <div className="mb-3 rounded bg-amber-50 p-3 text-sm text-amber-900">
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={showReferences} onChange={e => setShowReferences(e.target.checked)} />
+            显示现代位置参考（橙色空心点）
+          </label>
+          <p className="mt-1 text-xs">高德匹配今地名的参考位置，可能是行政区中心；古今对应关系及遗址位置尚待核验。底图为现代地图。</p>
+        </div>
+      )}
+
+      {withCoords.length === 0 && (
+        <p className="mb-4 rounded bg-amber-50 p-3 text-sm text-amber-900">
+          {locations.length ? '当前地点尚无经过核验的坐标。可在“地点”页查看原文、今地名和相关人物；地图暂不显示标记。' : '当前筛选没有地点数据，请调整卷数或年份。'}
+        </p>
+      )}
 
       <div className="flex-1 flex gap-4 overflow-hidden" style={{ minHeight: '500px' }}>
         {/* Map container */}
@@ -157,7 +181,7 @@ export function MapView({
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
 
-            <FitBounds locations={locations} />
+            <FitBounds locations={withCoords} />
             <FocusLocation location={focusLocation} />
 
             {/* Trajectory polyline */}
@@ -180,11 +204,11 @@ export function MapView({
                 center={[loc.coordinates![1], loc.coordinates![0]]}
                 radius={hoveredId === loc.id || selectedLocation?.id === loc.id ? 9 : 6}
                 pathOptions={{
-                  fillColor: selectedLocation?.id === loc.id ? '#8b4513' : '#c41e3a',
-                  color: '#8b4513',
+                  fillColor: loc.geocoding?.status === 'needs_review' ? '#f59e0b' : '#c41e3a',
+                  color: loc.geocoding?.status === 'needs_review' ? '#b45309' : '#8b4513',
                   weight: selectedLocation?.id === loc.id ? 3 : 1,
                   opacity: 1,
-                  fillOpacity: 0.85,
+                  fillOpacity: loc.geocoding?.status === 'needs_review' ? 0.18 : 0.85,
                 }}
                 eventHandlers={{
                   click: () => setSelectedLocation(loc),
@@ -197,6 +221,9 @@ export function MapView({
                     <div className="font-bold text-[#8b4513]">{loc.canonical_name}</div>
                     {loc.modern_name && (
                       <div className="text-gray-600">今：{loc.modern_name}</div>
+                    )}
+                    {loc.geocoding?.status === 'needs_review' && (
+                      <div className="text-amber-800">现代参考：{loc.geocoding.matched_address}（{loc.geocoding.match_level ?? '候选'}）· 古址待核验</div>
                     )}
                     {loc.location_type && (
                       <div className="text-gray-500 text-xs">{loc.location_type}</div>
@@ -251,6 +278,9 @@ export function MapView({
             
             {selectedLocation.modern_name && (
               <p className="text-sm text-gray-600 mb-2">今：{selectedLocation.modern_name}</p>
+            )}
+            {selectedLocation.geocoding?.status === 'needs_review' && (
+              <p className="text-xs text-amber-800 mb-2">高德参考位置：{selectedLocation.geocoding.matched_address}（{selectedLocation.geocoding.match_level ?? '候选'}）。古址尚待核验。</p>
             )}
             {selectedLocation.location_type && (
               <p className="text-xs text-gray-500 mb-2">类型：{selectedLocation.location_type}</p>

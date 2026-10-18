@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "coverage": [
+    {
+      "juan": 1,
+      "processed": 112,
+      "total": 112,
+      "complete": true
+    },
+    {
+      "juan": 2,
+      "processed": 111,
+      "total": 111,
+      "complete": true
+    },
+    {
+      "juan": 3,
+      "processed": 77,
+      "total": 77,
+      "complete": true
+    },
+    {
+      "juan": 4,
+      "processed": 81,
+      "total": 81,
+      "complete": true
+    },
+    {
+      "juan": 5,
+      "processed": 50,
+      "total": 50,
+      "complete": true
+    }
+  ],
+  "models": [
+    "gpt-6-astra"
+  ],
+  "files": {
+    "unified_knowledge.json": {
+      "sha256": "e1425978e7cc760779aabac511736fc964eb95f973a37d3e88a478b3a1003003",
+      "bytes": 5128665
+    },
+    "juan_year_index.json": {
+      "sha256": "bf5f82dfc521c9912f8ba3a14e4b0d15b07e17ea514425b56592d5596e4717f7",
+      "bytes": 5761
+    }
+  }
+}

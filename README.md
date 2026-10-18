@@ -1,10 +1,19 @@
 # 资治通鉴-文白对照数据-人工智能辅助理解-交互式史书
 
-> 🚀 **强烈推荐先点这里在线体验：<https://zztj.wawuyu.cn>**
+> 🚀 **在线体验：[资治通鉴交互探索](https://jy0284.github.io/zizhitongjian/explore/)**
 >
-> 建议从「关系网络」「地图」开始探索，交互体验最佳。
+> 已上线前五卷完整解析（431 段），支持时间轴、人物关系、地点与地图探索。
+> [文白对照阅读](https://jy0284.github.io/zizhitongjian/)保留原有地址。
 
 ## 更新记录
+
+- **2026.10.18（前五卷上线）**
+    - GitHub Pages 同时发布交互探索与文白对照阅读；无需内网转发或自建服务器。
+    - GPT-6 Astra / high 与更严格的证据提示词，保留原文依据和模型版本。
+    - 跨卷人物链接自动切换范围，支持别名与浏览器返回；国家、组织不再混入人物按钮。
+    - 回溯旧事及相对日期不再被强行归到段落年份；未消歧称谓、使者及泛指群体按来源保留。
+    - 人物原文依据附文言对照；五处译文缺字“孔”按原文“子思”修正派生展示。
+    - 地点列表与详情可打开现代位置参考；参考点与已核验古址明确区分。
 
 - **2026.1.17**
     - **前端可视化（visualization）**
@@ -34,6 +43,57 @@
 
 ## 文白对照阅读
 [阅读书籍点击](https://jy0284.github.io/zizhitongjian/chapters/001_资治通鉴第一卷(周纪).html)
+
+## GitHub Pages 部署
+
+交互探索位于 `/zizhitongjian/explore/`，原有阅读页面及章节地址保持不变。浏览器直接读取公开 JSON，浏览时不调用模型或高德 API；地图使用 Leaflet 与 OpenStreetMap，当前坐标为现代位置参考，尚未核验为古址。
+
+仓库的 **Settings → Pages → Source** 使用 **GitHub Actions**。提交到 `main` 后，[部署工作流](https://github.com/JY0284/zizhitongjian/actions/workflows/mdbook.yml)会校验公开数据、运行前端测试与构建，再合并 mdBook 阅读站点发布。也可以在 Actions 页面手动运行。
+
+公开快照保存在 `visualization/snapshot/`。本地更新知识库后，在仓库根目录执行：
+
+```shell
+python scripts/export_public_snapshot.py
+python scripts/validate_artifacts.py --data-dir visualization/snapshot
+```
+
+检查并提交这三个快照文件（两个数据 JSON 和 `manifest.json`）即可触发发布。导出器目前要求前五卷完整，扩展卷数时需同步调整覆盖范围校验。快照采用字段白名单并记录 SHA-256，构建时验证大小与校验值；模型密钥、高德 Key、费用账本和本地缓存不进入发布包。
+
+新克隆仓库无需 API Key 即可预览已有快照：
+
+```shell
+python scripts/build_pages.py --install-snapshot
+cd visualization
+npm ci
+npm run dev
+```
+
+复现完整发布包需 Node.js 22、Python 3.12 和 mdBook 0.4.36：先安装快照，以 `VITE_BASE_PATH=/zizhitongjian/explore/` 构建前端，再从仓库根目录运行 `python scripts/build_pages.py`。合并产物在 `.pages-build/site/`；工作流中包含完整命令。
+
+## 现成数据下载（无需跑模型）
+
+前五卷 431 段的公开快照已随仓库提交，也可直接下载：
+
+| 文件 | 下载 | 仓库版本 |
+| --- | --- | --- |
+| `unified_knowledge.json` | [下载知识库](https://jy0284.github.io/zizhitongjian/explore/data/unified_knowledge.json) | [查看文件](https://github.com/JY0284/zizhitongjian/blob/main/visualization/snapshot/unified_knowledge.json) |
+| `juan_year_index.json` | [下载卷年索引](https://jy0284.github.io/zizhitongjian/explore/data/juan_year_index.json) | [查看文件](https://github.com/JY0284/zizhitongjian/blob/main/visualization/snapshot/juan_year_index.json) |
+| `manifest.json` | [下载覆盖范围与校验值](https://jy0284.github.io/zizhitongjian/explore/data/manifest.json) | [查看文件](https://github.com/JY0284/zizhitongjian/blob/main/visualization/snapshot/manifest.json) |
+
+下载前两个文件，保持文件名不变，放入 `visualization/public/data/` 即可供前端使用。已克隆仓库时，优先运行 `python scripts/build_pages.py --install-snapshot`，它会校验后自动复制这三个文件，不需要 Python 第三方依赖或 API Key。模型结果仍需核对原文；这不是全书的结构化知识库。
+
+## 供 Agent 使用的 Skill
+
+[zizhitongjian-history](https://github.com/JY0284/zizhitongjian/blob/main/skills/zizhitongjian-history/SKILL.md) 提供全书文本检索、前五卷实体/事件检索、关系查询与文白对照出处。查询脚本只需 Python 3.11+，无需安装数据流水线依赖、运行模型或配置 Key。
+
+```shell
+python skills/zizhitongjian-history/scripts/query.py coverage
+python skills/zizhitongjian-history/scripts/query.py search 陈庄 --kind entity
+python skills/zizhitongjian-history/scripts/query.py neighbors 陈庄
+python skills/zizhitongjian-history/scripts/query.py passage 3-11-4
+```
+
+Agent 可直接读取该 `SKILL.md`。若使用 Codex，也可把整个 `skills/zizhitongjian-history` 文件夹复制到 `$CODEX_HOME/skills/`（未设置时为 `~/.codex/skills/`），重新加载后用 `$zizhitongjian-history` 调用。复制安装后，查询时在子命令前添加 `--repo <克隆仓库的绝对路径>`；不要只复制 `SKILL.md` 而遗漏脚本。其他支持 `SKILL.md` 的 Agent 可按其技能目录约定安装。当前交付为 Skill 和本地 JSON 查询接口，不是 MCP 服务器。
 
 ## 简介
 项目地址：[zizhitongjian](https://github.com/JY0284/zizhitongjian)
@@ -107,13 +167,23 @@ chapters
 
 ### 本地启动方法
 
-如果您想在本地运行该系统：
+环境要求：Python 3.11+（本地验证使用 3.12）、Node.js 22.13+。
+干净克隆中包含 294 卷文本和前五卷已发布的模型抽取快照。
+默认使用现成快照，不需要 uv、Python 第三方依赖或 API 密钥：
 
 ```bash
+python scripts/build_pages.py --install-snapshot
 cd visualization
-npm install
-npm run dev
+npm ci
+npm run dev -- --host 127.0.0.1
 ```
+
+打开 <http://127.0.0.1:5173/>，默认展示前五卷，包含时间轴、关系网络、地点和现代位置参考。
+只有需要开发或运行 Python 数据流水线时，才需在根目录运行 `uv sync --locked --python 3.12`。
+Windows 上若 `uv` 未加入 PATH，可使用 `python -m uv`。
+
+旧的 `scripts/prepare_demo.py` 仍用于最小样例调试；它不含完整事件和地图数据，
+不应替代上述公开快照。样例卷号只是展示分组，不可用于历史研究。
 
 ## 本地开发
 
@@ -133,7 +203,9 @@ uv run python scripts/validate_segment_year_index.py --fail
 
 ```bash
 cd visualization
-npm install
+npm ci
+npm test
+npm run lint
 npm run build
 ```
 
@@ -144,27 +216,57 @@ npm run build
 - `visualization/public/data/unified_knowledge.json`
 - `visualization/public/data/juan_year_index.json`
 
-这些文件是生成产物，干净检出仓库后可能不存在。启动前端前，请先通过数据流水线生成，或从流水线输出中复制到前端运行时目录。
+这些运行时文件不纳入 Git。使用已发布的数据时，从 `visualization/snapshot/` 安装即可；
+只有重新抽取或扩充数据时，才需要以下流水线。
 
-### 本地 API 密钥
+### 构建正式数据
 
-本地密钥只放在被忽略的 `.env` 中。复制 `.env.sample` 为 `.env` 后再填写本机配置：
-
-```bash
-cp .env.sample .env
-```
-
-只有运行 LLM 抽取时才需要设置 `DEEPSEEK_API_KEY`。`knowledge_extraction.py` 从进程环境变量读取配置，运行前先导出 `.env`：
+1. 将 `.env.sample` 复制为 `.env`，填写 `DEEPSEEK_API_KEY`，按实际可用模型设置 `DEEPSEEK_MODEL`。
+2. 先查看待抽取范围，再运行小批量请求：
 
 ```bash
-set -a
-source .env
-set +a
+uv run python knowledge_extraction.py --dry-run --juan-start 1 --juan-end 1
+uv run python knowledge_extraction.py --juan-start 1 --juan-end 1 --limit 5
+uv run python scripts/build_data.py --publish-frontend
 ```
 
-只有运行地理编码时才需要设置 `AMAP_KEY`。地理编码脚本会自动加载 `.env`。不要提交 `.env`。
+抽取命令会调用收费 API；默认仅处理 1 个未完成片段，默认 4 个工作线程，
+单次请求超时 120 秒。可用 `--limit N` 限制批量，或显式使用 `--all` 处理
+所选卷范围内的全部待处理片段。已保存片段会跳过，失败时命令返回非零退出码，
+重跑可继续。请求并发执行，缓存由主线程串行保存。
 
-默认抽取模型是 `deepseek-v4-flash`。需要更强推理能力时，将 `DEEPSEEK_MODEL` 设为 `deepseek-v4-pro`。
+全书原始分段共有 30,758 个句子片段；请先验证小批量质量再扩大范围。
+`build_data.py --publish-frontend` 会验证并用正式产物替换前端样例。
+需要地图坐标时，配置 `AMAP_KEY` 后加 `--geocode`。
+仅重建年份索引可用 `uv run python scripts/build_data.py --skip-resolve`；
+此命令不会凭空生成缺失的知识库。
+
+### 本地模型配置与预算抽取
+
+公开数据使用 **GPT-6 Astra / high** 和 `prompts/extraction_grounded_v2.md` 生成。模型抽取经过结构、覆盖和引用检查，仍需人工审校历史判断。
+
+重新抽取时复制 `.env.sample` 为 `.env`，在本机填写 `LLM_API_KEY`、`LLM_BASE_URL`。具体服务接入、账户信息、单价和费用账本属于本地运行配置，不纳入仓库或发布包。
+
+`scripts/run_budgeted_extraction.py --help` 列出完整选项。调用时显式指定模型、预算以及输入/输出每百万 token 的保守单价；`--dry-run` 只统计待处理片段，不发起请求。正式运行还要求 `LLM_PRICING_CONFIG` 指向本机审阅过的价格契约 JSON（放在被忽略的 `data/private/` 下），脚本核验接口、币种、计费规则和当前价格后才发送请求。
+
+价格契约包含 `base_url`、`group`、`currency`（CNY）、`quota_per_unit`、`usd_exchange_rate`，以及 `models` 中各模型的 `billing_expression`、`input_base_rate`、`output_base_rate`。当前价格核验适配 `/api/pricing` 和 `/api/status` 格式；不同服务需实现相应适配，不能跳过价格检查。接口地址、账户分组和真实价格只填写在本地文件中。
+
+请求先预留完整输出上限及保守输入费用，再按实际用量结算。网络异常或用量不明时保留全额预留、不自动重试；续跑必须沿用原账本。创建账本旁的同名 `.stop` 文件可停止后续请求。账本和响应保存在忽略目录 `data/runs/`，请勿上传。可选对账使用本机 `LLM_BILLING_LOG_URL` 和 `LLM_BILLING_UNITS_PER_CNY`，不会修改预算账本。
+
+已完成的公开快照不需要这些配置。维护者可离线审计、重建自己的抽取缓存：
+
+```shell
+python scripts/audit_extraction.py --store-dir data/store-astra-v2 --model gpt-6-astra --juan-end 5
+python -c "from pathlib import Path; from scripts.run_budgeted_extraction import publish; publish(Path('data/store-astra-v2'))"
+```
+
+`data/store-astra-v2` 是本地缓存路径，不随仓库分发。普通使用者运行前文的 `--install-snapshot` 即可。
+
+原文修正仅影响派生展示；引用旧事不按叙述段落强行补年，尚未消歧的称谓按来源保留。同名地点的合并不代表古代疆界或坐标已核验。
+
+地图底图使用 Leaflet + OpenStreetMap，浏览不需要 Key。仅在本地运行地理编码时配置 `AMAP_KEY`；现代地名匹配结果与已核验古址必须区分。
+
+旧的 `knowledge_extraction.py` 入口使用 `DEEPSEEK_API_KEY` 与 `DEEPSEEK_MODEL`。所有密钥放在被忽略的 `.env` 中，进程环境变量优先，不要提交实际配置。
 
 ### 工程文档
 
@@ -191,7 +293,9 @@ set +a
 4.  **地点地理编码 (Geocoding)**
     *   使用高德(Amap)为 `data/unified_knowledge.json` 的地点补全 WGS84 坐标（`coordinates: [lng, lat]`）。
     *   配置：复制 `.env.sample` 为 `.env`，填入 `AMAP_KEY`。
-    *   运行：`python scripts/geocode_locations_amap.py` 生成缓存，然后 `python scripts/merge_geocoding_into_unified_kb.py` 回填坐标。
+    *   运行：`python scripts/geocode_locations_amap.py` 生成候选缓存。即使高德只返回一个地址，也会标记 `needs_review=true` 并保留匹配地址、行政级别和候选坐标，避免把现代行政区中心误当成古址。
+    *   核验后在缓存 `overrides` 中记录该地点的 WGS84 `coordinates: [经度, 纬度]` 和 `notes`（依据）；`python scripts/merge_geocoding_into_unified_kb.py` 回填已核验坐标。抽取脚本发布数据时也会自动合并缓存，保留人工核验结果。
+    *   地图可显示匹配今地名的单一候选，使用橙色空心点标注“现代位置参考”。多候选、省级中心和未匹配今地名的结果不显示；候选不用于人物轨迹。
     *   速率控制：默认每次请求间隔 `0.25s`（可用 `--sleep` 调整），避免触发限流。
     *   无密钥也可预跑：不设置 `AMAP_KEY` 时会自动进入 `--simulate`（只写入 query/needs_review，不调用 API）。
 

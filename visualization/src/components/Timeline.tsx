@@ -14,7 +14,7 @@ interface TimePoint {
 
 export function Timeline({ events, onEventClick }: TimelineProps) {
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTimePoint, setSelectedTimePoint] = useState<TimePoint | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
   // Filter events by search query
   const filteredEvents = useMemo(() => {
@@ -49,6 +49,8 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
       .sort((a, b) => a.year - b.year);
   }, [filteredEvents]);
 
+  const selectedTimePoint = timePoints.find(point => point.year === selectedYear) ?? null;
+
   // Events without time info
   const eventsWithoutTime = useMemo(() => {
     return filteredEvents.filter(e => e.timeNumeric === null);
@@ -56,6 +58,7 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
 
   return (
     <div className="w-full bg-white rounded-lg shadow-md p-4">
+      <p className="mb-3 text-xs text-gray-500">时间轴展示已抽取的明确事件；无法确定年份的引用旧事单列，其他人物互动可在关系网络中查看。</p>
       {/* Search bar */}
       <div className="flex items-center gap-3 mb-4">
         <div className="flex-1 relative">
@@ -101,7 +104,7 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
                   className={`relative flex items-start mb-3 cursor-pointer group ${
                     selectedTimePoint?.year === tp.year ? 'bg-[#faf8f5] rounded-lg -mx-2 px-2 py-1' : ''
                   }`}
-                  onClick={() => setSelectedTimePoint(selectedTimePoint?.year === tp.year ? null : tp)}
+                  onClick={() => setSelectedYear(selectedTimePoint?.year === tp.year ? null : tp.year)}
                 >
                   {/* Year label */}
                   <div className="w-[55px] flex-shrink-0 text-right pr-3">
@@ -154,7 +157,7 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
               {/* Events without time */}
               {eventsWithoutTime.length > 0 && (
                 <div className="mt-6 pt-4 border-t border-[#d4c5b5]">
-                  <div className="text-sm text-gray-500 mb-2">时间不详的事件 ({eventsWithoutTime.length})</div>
+                  <div className="text-sm text-gray-500 mb-2">年份待核验 ({eventsWithoutTime.length})</div>
                   {eventsWithoutTime.map((event) => (
                     <div
                       key={event.id}
@@ -162,6 +165,7 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
                       onClick={() => onEventClick?.(event)}
                     >
                       <div className="text-sm font-medium text-[#2c1810]">{event.name}</div>
+                      {event.time && <div className="text-xs text-gray-500">抽取时间：{event.time}</div>}
                       {event.location && (
                         <div className="text-xs text-gray-500">地点：{event.location}</div>
                       )}
@@ -182,7 +186,7 @@ export function Timeline({ events, onEventClick }: TimelineProps) {
                   {selectedTimePoint.yearLabel}
                 </h3>
                 <button
-                  onClick={() => setSelectedTimePoint(null)}
+                  onClick={() => setSelectedYear(null)}
                   className="text-gray-400 hover:text-gray-600"
                 >
                   ×

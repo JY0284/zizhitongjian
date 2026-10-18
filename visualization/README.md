@@ -14,6 +14,7 @@
 - 节点大小表示出现频率
 - 颜色区分不同势力
 - 支持拖拽交互和缩放
+- 详情中的人物链接支持跨卷自动切换、别名解析与返回原筛选；国家与组织单独显示
 
 ### 📊 势力分布图
 - 柱状图展示各势力的人物数量
@@ -22,6 +23,7 @@
 ### 📍 地点列表
 - 展示所有出现的历史地点
 - 包含古今地名对照
+- “参考地图”打开高德匹配的现代位置，橙色空心点表示古址未核验，不用于人物轨迹
 
 ### 🎛️ 筛选功能
 - **卷范围筛选**: 选择要查看的卷数范围（卷1到卷294）
@@ -30,7 +32,7 @@
 
 ## 技术栈
 
-- **框架**: React 18 + TypeScript
+- **框架**: React 19 + TypeScript
 - **构建工具**: Vite
 - **样式**: Tailwind CSS
 - **可视化**: D3.js
@@ -38,12 +40,20 @@
 
 ## 开发
 
+先在仓库根目录运行 `uv sync --locked --python 3.12` 和
+`uv run python scripts/prepare_demo.py`，再进入本目录。正式抽取和发布流程见根目录 README。
+需要 Node.js 22.13+。样例模式不会调用 API；关系网络可预览，事件和地图坐标暂缺。
+
 ```bash
 # 安装依赖
-npm install
+npm ci
 
 # 启动开发服务器
 npm run dev
+
+# 回归检查
+npm test
+npm run lint
 
 # 构建生产版本
 npm run build
@@ -59,7 +69,10 @@ The current app reads unified runtime artifacts:
 - `public/data/unified_knowledge.json`
 - `public/data/juan_year_index.json`
 
-If these files are missing, the app will show a load error. Generate the artifacts in the repo root, then publish them into `visualization/public/data/`.
+If these files are missing, the app will show a load error. For an offline preview, run `uv run python scripts/prepare_demo.py` in the repo root. To publish real extractions, run `uv run python scripts/build_data.py --publish-frontend`.
+
+本次 Astra 前五卷数据的离线发布命令见根目录 README 的“本次升级”段落，
+使用 `data/store-astra-v2`。不要使用默认 `data/store` 构建命令覆盖新版结果。
 
 `public/data/.gitkeep` exists only to keep the runtime data directory visible. Generated JSON files in this directory should be produced by the root pipeline and reviewed before publishing.
 
@@ -86,26 +99,3 @@ src/
 ## 许可证
 
 MIT
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```

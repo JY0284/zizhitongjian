@@ -1,5 +1,5 @@
 from typing import List, Literal, Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 class Role(BaseModel):
@@ -31,6 +31,7 @@ class Role(BaseModel):
 
     description: str = Field(
         default="",
+        validation_alias=AliasChoices("description", "llm_introduction"),
         description="基于模型知识对该实体的简要介绍，补充原文未提及的背景信息"
     )
     
@@ -60,4 +61,9 @@ class Role(BaseModel):
         if v is None:
             return ""
         return v
+
+    @field_validator('power', mode='before')
+    @classmethod
+    def normalize_unknown_power(cls, value):
+        return None if isinstance(value, str) and value.strip().lower() in {'none', 'null', ''} else value
 

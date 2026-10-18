@@ -29,6 +29,7 @@ visualization/public/data/
 inter/
 debug_logs/
 settings.json
+.pages-build/
 *.db
 *.bak
 *.log

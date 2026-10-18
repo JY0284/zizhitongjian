@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import time
@@ -25,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import urlencode
 from urllib.request import urlopen, Request
+from urllib.error import URLError
 
 try:
     from tqdm import tqdm  # type: ignore
@@ -121,6 +123,12 @@ class GeocodeResult:
     info: Optional[str] = None
     candidate_coordinates_wgs84: Optional[Tuple[float, float]] = None
     candidate_count: Optional[int] = None
+    matched_address: Optional[str] = None
+    match_level: Optional[str] = None
+
+
+class GeocodingProviderError(RuntimeError):
+    """Safe diagnostics without the request URL, which contains a key."""
 
 
 def _amap_geocode_once(address: str, api_key: str, timeout_sec: float = 20.0) -> Dict[str, Any]:
@@ -128,8 +136,11 @@ def _amap_geocode_once(address: str, api_key: str, timeout_sec: float = 20.0) ->
     url = "https://restapi.amap.com/v3/geocode/geo?" + urlencode(params)
 
     req = Request(url, headers={"User-Agent": "zizhitongjian-geocoder/1.0"})
-    with urlopen(req, timeout=timeout_sec) as resp:
-        return json.loads(resp.read().decode("utf-8"))
+    try:
+        with urlopen(req, timeout=timeout_sec) as resp:
+            return json.loads(resp.read().decode("utf-8"))
+    except (URLError, TimeoutError, ValueError) as exc:
+        raise GeocodingProviderError(type(exc).__name__) from None
 
 
 def amap_geocode(address_candidates: list[str], api_key: str, timeout_sec: float = 20.0) -> GeocodeResult:
@@ -145,9 +156,8 @@ def amap_geocode(address_candidates: list[str], api_key: str, timeout_sec: float
         info = payload.get("info")
         infocode = payload.get("infocode")
         if payload.get("status") != "1":
-            last_info = info or "amap error"
-            last_infocode = infocode
-            continue
+            code = str(infocode)
+            raise GeocodingProviderError("Amap rejected request; infocode=" + (code if code.isdigit() else "unknown"))
 
         geocodes = payload.get("geocodes") or []
         if not geocodes:
@@ -189,18 +199,21 @@ def amap_geocode(address_candidates: list[str], api_key: str, timeout_sec: float
         lng_gcj, lat_gcj = (float(x) for x in loc_str.split(",", 1))
         lng_wgs, lat_wgs = gcj02_to_wgs84(lng_gcj, lat_gcj)
 
-        needs_review = False
-        confidence = 0.9
-
+        match = geocodes[0]
+        # A modern address match alone does not establish an ancient site's location.
         return GeocodeResult(
             provider="amap",
             query=address,
-            coordinates_wgs84=(lng_wgs, lat_wgs),
-            confidence=confidence,
-            needs_review=needs_review,
-            evidence="amap geocode match",
+            coordinates_wgs84=None,
+            confidence=0.6,
+            needs_review=True,
+            evidence="Modern address candidate; historical identification requires review",
             infocode=infocode,
             info=info,
+            candidate_coordinates_wgs84=(lng_wgs, lat_wgs),
+            candidate_count=1,
+            matched_address=match.get("formatted_address"),
+            match_level=match.get("level"),
         )
 
     return GeocodeResult(
@@ -228,11 +241,10 @@ def _coords_ok(coords: Any) -> bool:
     if not isinstance(coords, (list, tuple)) or len(coords) != 2:
         return False
     try:
-        float(coords[0])
-        float(coords[1])
+        lng, lat = float(coords[0]), float(coords[1])
     except Exception:
         return False
-    return True
+    return math.isfinite(lng) and math.isfinite(lat) and -180 <= lng <= 180 and -90 <= lat <= 90
 
 
 def _clean_query(text: str) -> str:
@@ -281,8 +293,10 @@ def build_query_candidates(loc_id: str, canonical_name: str, modern_name: str, l
 
 def save_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    temp = path.with_suffix(path.suffix + ".tmp")
+    with temp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(temp, path)
 
 
 def main() -> int:
@@ -363,7 +377,9 @@ def main() -> int:
 
     def _needs_geocoding(loc_id: str) -> bool:
         if _coords_ok((overrides.get(loc_id) or {}).get("coordinates")):
-            return False
+            existing = cache_locations.get(loc_id) or {}
+            return (existing.get("coordinates") != overrides[loc_id]["coordinates"]
+                    or existing.get("source") != "override")
         if args.refresh:
             return True
         existing = cache_locations.get(loc_id) or {}
@@ -483,7 +499,12 @@ def main() -> int:
         prev = cache_locations.get(loc_id) or {}
         prev_attempts = _attempts(prev)
 
-        result = amap_geocode(query_candidates or [query], api_key=api_key)
+        try:
+            result = amap_geocode(query_candidates or [query], api_key=api_key)
+        except GeocodingProviderError as exc:
+            save_json(out_path, cache)
+            print(f"Stopped geocoding: {exc}; completed results retained in {out_path}", file=sys.stderr)
+            return 1
         coords = list(result.coordinates_wgs84) if result.coordinates_wgs84 else None
         candidate_coords = (
             list(result.candidate_coordinates_wgs84)
@@ -495,10 +516,13 @@ def main() -> int:
             "canonical_name": canonical_name,
             "modern_name": modern_name,
             "query": result.query,
+            "modern_reference": bool(modern_name) and result.query == _clean_query(str(modern_name)),
             # Only set authoritative coordinates when confident.
             "coordinates": coords if (coords is not None and not result.needs_review) else None,
             "candidate_coordinates": candidate_coords,
             "candidate_count": result.candidate_count,
+            "matched_address": result.matched_address,
+            "match_level": result.match_level,
             "confidence": result.confidence,
             "source": result.provider,
             "evidence": result.evidence,

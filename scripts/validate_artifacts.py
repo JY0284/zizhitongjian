@@ -36,9 +36,9 @@ def validate_relation_years(relation_id: str, relation: dict[str, Any]) -> list[
     errors: list[str] = []
     first = relation.get("first_interaction_year")
     last = relation.get("last_interaction_year")
-    if first is not None and not isinstance(first, int):
+    if first is not None and type(first) is not int:
         errors.append(f"relation {relation_id}: first_interaction_year must be int or null")
-    if last is not None and not isinstance(last, int):
+    if last is not None and type(last) is not int:
         errors.append(f"relation {relation_id}: last_interaction_year must be int or null")
     if isinstance(first, int) and isinstance(last, int) and first > last:
         errors.append(f"relation {relation_id}: first_interaction_year is after last_interaction_year")
@@ -57,8 +57,14 @@ def validate_artifacts(data_dir: Path) -> list[str]:
     if errors:
         return errors
 
-    kb = load_json(kb_path)
-    juan_index = load_json(juan_path)
+    try:
+        kb = load_json(kb_path)
+        juan_index = load_json(juan_path)
+    except (OSError, ValueError) as exc:
+        return [f"Cannot read runtime JSON: {exc}"]
+
+    if not isinstance(kb, dict) or not isinstance(juan_index, dict):
+        return ["Runtime JSON roots must be objects"]
 
     for key in ["roles", "locations", "events", "relations", "name_to_role_id", "name_to_location_id"]:
         if not isinstance(kb.get(key), dict):
@@ -66,6 +72,10 @@ def validate_artifacts(data_dir: Path) -> list[str]:
 
     if not isinstance(juan_index.get("juan_start_year"), dict):
         errors.append("juan_year_index.json: juan_start_year must be an object")
+
+    # Do not iterate malformed containers after reporting their schema errors.
+    if errors:
+        return errors
 
     for loc_id, location in (kb.get("locations") or {}).items():
         if not isinstance(location, dict):

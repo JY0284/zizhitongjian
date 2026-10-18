@@ -18,6 +18,7 @@ class EntityOccurrence(BaseModel):
     sentence_indexes: List[int] = Field(default_factory=list)
     original_description: str = ""
     source_sentence: str = ""
+    year: Optional[int] = None  # Year of the source segment, not a life-date claim.
 
 
 class UnifiedRole(BaseModel):
@@ -99,11 +100,6 @@ class UnifiedRole(BaseModel):
         """How many 卷s this entity spans."""
         return len(self.juans_appeared)
     
-    class Config:
-        # Allow set serialization
-        json_encoders = {
-            set: list
-        }
 
 
 class UnifiedPolity(BaseModel):
@@ -123,8 +119,6 @@ class UnifiedPolity(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
-    class Config:
-        json_encoders = {set: list}
 
 
 class UnifiedSchool(BaseModel):
@@ -144,8 +138,6 @@ class UnifiedSchool(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
-    class Config:
-        json_encoders = {set: list}
 
 
 class UnifiedOrganization(BaseModel):
@@ -165,8 +157,6 @@ class UnifiedOrganization(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
 
-    class Config:
-        json_encoders = {set: list}
 
 
 class UnifiedLocation(BaseModel):
@@ -196,8 +186,6 @@ class UnifiedLocation(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     
-    class Config:
-        json_encoders = {set: list}
 
 
 class UnifiedEvent(BaseModel):
@@ -244,8 +232,16 @@ class UnifiedEvent(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     
-    class Config:
-        json_encoders = {set: list}
+
+
+class RelationOccurrence(BaseModel):
+    juan_index: int
+    segment_index: int
+    sentence_indexes: List[int] = Field(default_factory=list)
+    year: Optional[int] = None
+    time: Optional[str] = None
+    action: str = ""
+    context: str = ""
 
 
 class UnifiedRelation(BaseModel):
@@ -283,6 +279,7 @@ class UnifiedRelation(BaseModel):
     
     # Contexts from each interaction
     contexts: List[str] = Field(default_factory=list)
+    occurrences: List[RelationOccurrence] = Field(default_factory=list)
     
     # Source tracking
     source_juans: Set[int] = Field(default_factory=set)
@@ -290,8 +287,6 @@ class UnifiedRelation(BaseModel):
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     
-    class Config:
-        json_encoders = {set: list}
 
 
 class UnifiedKnowledgeBase(BaseModel):
@@ -339,6 +334,3 @@ class UnifiedKnowledgeBase(BaseModel):
     
     juans_processed: List[int] = Field(default_factory=list)
     last_updated: str = Field(default_factory=lambda: datetime.now().isoformat())
-    
-    class Config:
-        json_encoders = {set: list}

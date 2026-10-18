@@ -7,19 +7,7 @@ import type {
   UnifiedKnowledgeBase,
 } from '../types/unified';
 
-function resolveRoleId(kb: UnifiedKnowledgeBase | null, nameOrId: string): string | null {
-  if (!kb) return null;
-  // Direct id match
-  if (kb.roles?.[nameOrId]) return nameOrId;
-  // Check name_to_role_id index
-  const fromIndex = kb.name_to_role_id?.[nameOrId];
-  if (fromIndex && kb.roles?.[fromIndex]) return fromIndex;
-  // Fallback: scan roles for matching all_names (handles aliases not in index)
-  for (const role of Object.values(kb.roles ?? {})) {
-    if (role.all_names?.includes(nameOrId)) return role.id;
-  }
-  return null;
-}
+import { resolveRoleId, relatedEntities } from '../utils/roleNavigation';
 
 function formatJuanSpan(juans: number[] | undefined): string {
   if (!juans || juans.length === 0) return '未知卷';
@@ -43,14 +31,16 @@ function renderRelatedRoleChip(
   const available = roleId ? availableRoleIds.has(roleId) : false;
   const juanSpan = roleId && kb?.roles?.[roleId] ? formatJuanSpan(kb.roles[roleId].juans_appeared) : null;
 
-  if (available) {
+  if (roleId) {
     const baseClass =
       variant === 'danger'
         ? 'inline-flex items-center px-2 py-1 bg-[#c41e3a] text-white rounded text-sm hover:bg-[#8b4513] transition-colors cursor-pointer'
         : 'inline-flex items-center px-2 py-1 bg-[#faf8f5] border border-[#d4c5b5] rounded text-sm hover:bg-[#8b4513] hover:text-white hover:border-[#8b4513] transition-colors cursor-pointer';
     return (
-      <button key={name} onClick={() => onClick(name)} className={baseClass}>
+      <button key={name} onClick={() => onClick(roleId)} className={baseClass}
+        title={available ? '查看人物详情与关系图' : `打开人物所在卷：${juanSpan}`}>
         {name}
+        {!available && juanSpan && <span className="ml-1 text-[10px] opacity-70">({juanSpan})</span>}
       </button>
     );
   }
@@ -68,6 +58,31 @@ function renderRelatedRoleChip(
   );
 }
 
+function RelatedEntities({ names, kb, availableRoleIds, onClick, title = '相关人物' }: {
+  names: string[]; kb: UnifiedKnowledgeBase | null; availableRoleIds: Set<string>;
+  onClick: (name: string) => void; title?: string;
+}) {
+  const { people, others } = relatedEntities(kb, names);
+  return <>
+    {people.length > 0 && <div>
+      <span className="font-semibold text-[#2c1810]">{title}：</span>
+      <p className="text-xs text-gray-500 mt-0.5">点击查看人物与关系图；跨卷人物会自动切换范围</p>
+      <div className="flex flex-wrap gap-2 mt-1">
+        {people.map(name => renderRelatedRoleChip({ name, kb, availableRoleIds, onClick }))}
+      </div>
+    </div>}
+    {others.length > 0 && <div>
+      <span className="font-semibold text-[#2c1810]">相关国家、组织与其他实体：</span>
+      <div className="flex flex-wrap gap-2 mt-1">
+        {others.map(entity => <span key={`${entity.kind}:${entity.name}`}
+          className="inline-flex items-center px-2 py-1 bg-[#faf8f5] border border-[#d4c5b5] rounded text-sm">
+          {entity.name}<span className="ml-1 text-xs text-gray-500">{entity.kind}</span>
+        </span>)}
+      </div>
+    </div>}
+  </>;
+}
+
 interface EventDetailProps {
   event: TimelineEventUnified | null;
   onClose: () => void;
@@ -81,7 +96,6 @@ export function EventDetail({ event, onClose, onEntityClick, onLocationClick, kb
   if (!event) return null;
 
   const handleEntityClick = (name: string) => {
-    onClose();
     onEntityClick?.(name);
   };
 
@@ -93,7 +107,7 @@ export function EventDetail({ event, onClose, onEntityClick, onLocationClick, kb
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[9999]" onClick={onClose}>
       <div
-        className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6"
+        className="bg-white rounded-lg shadow-xl max-w-lg w-full mx-4 p-6 max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-start mb-4">
@@ -130,23 +144,8 @@ export function EventDetail({ event, onClose, onEntityClick, onLocationClick, kb
             </div>
           )}
 
-          {event.participants.length > 0 && (
-            <div>
-              <span className="font-semibold text-[#2c1810]">参与者：</span>
-              <p className="text-xs text-gray-500 mt-0.5">点击可在关系图中查看</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {event.participants.map((p) =>
-                  renderRelatedRoleChip({
-                    name: p,
-                    kb,
-                    availableRoleIds,
-                    onClick: handleEntityClick,
-                    variant: 'neutral',
-                  })
-                )}
-              </div>
-            </div>
-          )}
+          <RelatedEntities names={event.participants} kb={kb} availableRoleIds={availableRoleIds}
+            onClick={handleEntityClick} title="参与人物" />
 
           <div>
             <span className="font-semibold text-[#2c1810]">描述：</span>
@@ -183,7 +182,6 @@ export function RoleDetail({ role, onClose, onEntityClick, onEventClick, related
   if (!role) return null;
 
   const handleEntityClick = (name: string) => {
-    onClose();
     onEntityClick?.(name);
   };
 
@@ -235,32 +233,12 @@ export function RoleDetail({ role, onClose, onEntityClick, onEventClick, related
           )}
 
           <div>
-            <span className="font-semibold text-[#2c1810]">简介：</span>
+            <span className="font-semibold text-[#2c1810]">模型抽取简介：</span>
             <p className="text-gray-700 mt-1">{role.description || '暂无描述'}</p>
           </div>
 
-          {role.relatedEntities && role.relatedEntities.length > 0 && (
-            <div>
-              <span className="font-semibold text-[#2c1810]">相关人物：</span>
-              <p className="text-xs text-gray-500 mt-0.5">点击可在图中查看</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {role.relatedEntities.slice(0, 15).map((entity) =>
-                  renderRelatedRoleChip({
-                    name: entity,
-                    kb,
-                    availableRoleIds,
-                    onClick: handleEntityClick,
-                    variant: 'neutral',
-                  })
-                )}
-                {role.relatedEntities.length > 15 && (
-                  <span className="text-sm text-gray-500 self-center">
-                    +{role.relatedEntities.length - 15}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+          <RelatedEntities names={role.relatedEntities ?? []} kb={kb} availableRoleIds={availableRoleIds}
+            onClick={handleEntityClick} />
 
           {relatedEvents && relatedEvents.length > 0 && (
             <div>
@@ -288,6 +266,30 @@ export function RoleDetail({ role, onClose, onEntityClick, onEventClick, related
             <span className="font-semibold text-[#2c1810]">出现次数：</span>
             <span className="text-gray-700">{role.appearances} 次</span>
           </div>
+
+          {!!kb?.roles[role.id]?.occurrences.length && (
+            <details className="rounded border border-[#d4c5b5] p-3">
+              <summary className="cursor-pointer font-semibold text-[#8b4513]">
+                原文依据（{kb.roles[role.id].occurrences.length} 处）
+              </summary>
+              <p className="text-xs text-gray-500 mt-2">以下为仓库的文白对照，可能包含引语和史论；简介及人物对应关系仍需审校。</p>
+              <div className="mt-2 space-y-2">
+                {kb.roles[role.id].occurrences.map((item, index) => (
+                  <details key={index} className="border-t border-[#d4c5b5] pt-2 text-sm">
+                    <summary className="cursor-pointer text-gray-600">卷{item.juan_index} · 段{item.segment_index} · 片段{item.chunk_index + 1}</summary>
+                    <p className="mt-2 whitespace-pre-wrap leading-relaxed text-gray-700">{item.source_sentence || item.original_description || '此处未保存原文摘录。'}</p>
+                    {kb.source_passages?.[`${item.juan_index}-${item.segment_index}-${item.chunk_index}`] && (
+                      <div className="mt-2 rounded bg-amber-50 p-2 text-xs leading-relaxed text-gray-700">
+                        <p className="font-semibold">文言对照</p>
+                        <p>{kb.source_passages[`${item.juan_index}-${item.segment_index}-${item.chunk_index}`].original}</p>
+                        <p className="mt-1 text-amber-800">{kb.source_passages[`${item.juan_index}-${item.segment_index}-${item.chunk_index}`].review_note}</p>
+                      </div>
+                    )}
+                  </details>
+                ))}
+              </div>
+            </details>
+          )}
 
           <div>
             <span className="font-semibold text-[#2c1810]">出现卷目：</span>
@@ -370,7 +372,6 @@ export function LocationDetail({
   if (!location) return null;
 
   const handleEntityClick = (name: string) => {
-    onClose();
     onEntityClick?.(name);
   };
 
@@ -427,14 +428,14 @@ export function LocationDetail({
             </div>
           )}
 
-          {location.coordinates && (
+          {(location.coordinates || onNavigateToMap) && (
             <div className="flex items-center gap-4">
-              <div>
+              {location.coordinates ? <div>
                 <span className="font-semibold text-[#2c1810]">坐标：</span>
                 <span className="text-gray-700 ml-2">
                   {location.coordinates[0].toFixed(4)}, {location.coordinates[1].toFixed(4)}
                 </span>
-              </div>
+              </div> : <p className="text-sm text-amber-800">现代位置参考：{location.geocoding?.matched_address} · 古址待核验</p>}
               {onNavigateToMap && (
                 <button
                   onClick={(e) => {
@@ -468,23 +469,8 @@ export function LocationDetail({
             </div>
           )}
 
-          {relatedRoles.length > 0 && (
-            <div>
-              <span className="font-semibold text-[#2c1810]">相关人物：</span>
-              <p className="text-xs text-gray-500 mt-0.5">点击可在关系图中查看</p>
-              <div className="flex flex-wrap gap-2 mt-1">
-                {relatedRoles.map((role) =>
-                  renderRelatedRoleChip({
-                    name: role,
-                    kb,
-                    availableRoleIds,
-                    onClick: handleEntityClick,
-                    variant: 'danger',
-                  })
-                )}
-              </div>
-            </div>
-          )}
+          <RelatedEntities names={relatedRoles} kb={kb} availableRoleIds={availableRoleIds}
+            onClick={handleEntityClick} />
         </div>
       </div>
     </div>
@@ -512,12 +498,10 @@ export function RelationDetail({
   onEventClick,
   relatedEvents,
   kb,
-  availableRoleIds,
 }: RelationDetailProps) {
   if (!relations || relations.length === 0) return null;
 
   const handleEntityClick = (name: string) => {
-    onClose();
     onEntityClick?.(name);
   };
 
@@ -536,8 +520,8 @@ export function RelationDetail({
 
   const sourceId = resolveRoleId(kb, sourceName);
   const targetId = resolveRoleId(kb, targetName);
-  const sourceAvailable = sourceId ? availableRoleIds.has(sourceId) : false;
-  const targetAvailable = targetId ? availableRoleIds.has(targetId) : false;
+  const sourceAvailable = Boolean(sourceId);
+  const targetAvailable = Boolean(targetId);
   const sourceJuanSpan = sourceId && kb?.roles?.[sourceId] ? formatJuanSpan(kb.roles[sourceId].juans_appeared) : '未知卷';
   const targetJuanSpan = targetId && kb?.roles?.[targetId] ? formatJuanSpan(kb.roles[targetId].juans_appeared) : '未知卷';
 
@@ -606,7 +590,7 @@ export function RelationDetail({
 
           {/* Individual Relations */}
           {relations.map((relation, relIdx) => {
-            const relSourceId = typeof relation.source === 'object' ? (relation.source as any).id : relation.source;
+            const relSourceId = relation.source;
             const isReverse = relSourceId !== sourceName && relSourceId !== relations[0].source;
             const fromName = isReverse ? targetName : sourceName;
             const toName = isReverse ? sourceName : targetName;

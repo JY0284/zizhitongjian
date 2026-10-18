@@ -2,6 +2,7 @@
 // These types mirror the Python unified models for the resolved/merged entities
 
 export interface EntityOccurrence {
+  year?: number | null;
   juan_index: number;
   segment_index: number;
   chunk_index: number;
@@ -37,6 +38,15 @@ export interface UnifiedLocation {
   description: string;
   modern_name: string;
   coordinates: [number, number] | null;
+  geocoding?: {
+    status: string;
+    modern_reference?: boolean;
+    candidate_count?: number | null;
+    candidate_coordinates?: [number, number] | null;
+    matched_address?: string | null;
+    match_level?: string | null;
+    evidence?: string | null;
+  };
   associated_entities: string[];
   associated_events: string[];
   occurrences: EntityOccurrence[];
@@ -67,6 +77,8 @@ export interface UnifiedEvent {
 }
 
 export interface UnifiedRelation {
+  occurrences?: Array<{ juan_index: number; segment_index: number; sentence_indexes: number[];
+    year: number | null; time: string | null; action: string; context: string }>;
   id: string;
   from_entity: string;
   to_entity: string;
@@ -123,6 +135,12 @@ export interface UnifiedSchool {
 }
 
 export interface UnifiedKnowledgeBase {
+  data_mode?: 'demo';
+  data_source?: string;
+  data_notice?: string;
+  data_coverage?: Array<{ juan: number; processed: number; total: number; complete: boolean }>;
+  extraction_models?: string[];
+  source_passages?: Record<string, { original: string; translated: string; review_note?: string }>;
   roles: Record<string, UnifiedRole>;
   locations: Record<string, UnifiedLocation>;
   events: Record<string, UnifiedEvent>;

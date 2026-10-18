@@ -16,7 +16,7 @@ export interface UrlGlobalContext {
 
 const DEFAULT_CONTEXT: UrlGlobalContext = {
   tab: 'timeline',
-  juanRange: [1, 3],
+  juanRange: [1, 5],
   yearRange: [null, null],
 };
 

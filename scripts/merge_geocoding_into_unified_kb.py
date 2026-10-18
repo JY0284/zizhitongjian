@@ -12,6 +12,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import os
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
@@ -28,8 +30,10 @@ def _load_json(path: Path) -> Dict[str, Any]:
 
 def _save_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", encoding="utf-8") as f:
+    temp = path.with_suffix(path.suffix + ".tmp")
+    with temp.open("w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(temp, path)
 
 
 def _normalize_coords(coords: Any) -> Optional[Tuple[float, float]]:
@@ -41,6 +45,8 @@ def _normalize_coords(coords: Any) -> Optional[Tuple[float, float]]:
         lng = float(coords[0])
         lat = float(coords[1])
     except Exception:
+        return None
+    if not (math.isfinite(lng) and math.isfinite(lat) and -180 <= lng <= 180 and -90 <= lat <= 90):
         return None
     return (lng, lat)
 
@@ -62,26 +68,20 @@ def _set_geocoding_note(kb_loc: Dict[str, Any], entry: Dict[str, Any], status: s
         "infocode": entry.get("infocode"),
         "candidate_count": entry.get("candidate_count"),
         "candidate_coordinates": entry.get("candidate_coordinates"),
+        "matched_address": entry.get("matched_address"),
+        "match_level": entry.get("match_level"),
+        "modern_reference": entry.get("modern_reference", False),
         "updated_at": entry.get("updated_at"),
     }
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="Merge location geocoding cache into unified KB")
-    parser.add_argument("--kb", default="data/unified_knowledge.json", help="Path to unified KB JSON")
-    parser.add_argument("--geocoding", default="data/location_geocoding.json", help="Path to geocoding cache JSON")
-    parser.add_argument("--out", default="", help="Write output to this path instead of updating KB in-place")
-    parser.add_argument("--require-review-ok", action="store_true", help="Skip entries marked needs_review=true")
-    args = parser.parse_args()
-
-    kb_path = Path(args.kb)
-    geo_path = Path(args.geocoding)
-
-    kb = _load_json(kb_path)
-    geo = _load_json(geo_path)
-
+def merge_geocoding(kb: Dict[str, Any], geo: Dict[str, Any], require_review_ok: bool = False) -> Dict[str, int]:
     kb_locations = kb.get("locations") or {}
-    geo_locations = (geo.get("locations") or {})
+    geo_locations = dict(geo.get("locations") or {})
+    for loc_id, override in (geo.get("overrides") or {}).items():
+        if _normalize_coords(override.get("coordinates")) is not None:
+            geo_locations[loc_id] = {**override, "source": "override", "needs_review": False,
+                                     "evidence": override.get("notes", "manual override")}
 
     updated = 0
     noted = 0
@@ -94,12 +94,19 @@ def main() -> int:
             continue
 
         kb_loc = kb_locations[loc_id]
+        if (entry.get("source") != "override" and entry.get("modern_name") is not None
+                and entry["modern_name"] != kb_loc.get("modern_name")):
+            # A new extraction may correct the ancient/modern correspondence.
+            # Do not attach a candidate from a different interpretation.
+            continue
 
         needs_review = entry.get("needs_review") is True
         coords = _normalize_coords(entry.get("coordinates"))
 
         if needs_review or coords is None:
-            if args.require_review_ok and needs_review:
+            # A pending review must also invalidate a previously accepted cache point.
+            kb_loc["coordinates"] = None
+            if require_review_ok and needs_review:
                 skipped_review += 1
                 continue
             # Don't fill coordinates; instead attach a message for humans.
@@ -122,12 +129,23 @@ def main() -> int:
         _set_geocoding_note(kb_loc, entry=entry, status="ok")
         kb_loc["updated_at"] = _now_iso()
 
+    return dict(updated=updated, noted=noted, skipped_review=skipped_review, missing_in_kb=missing_in_kb)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Merge location geocoding cache into unified KB")
+    parser.add_argument("--kb", default="data/unified_knowledge.json", help="Path to unified KB JSON")
+    parser.add_argument("--geocoding", default="data/location_geocoding.json", help="Path to geocoding cache JSON")
+    parser.add_argument("--out", default="", help="Write output to this path instead of updating KB in-place")
+    parser.add_argument("--require-review-ok", action="store_true", help="Skip entries marked needs_review=true")
+    args = parser.parse_args()
+    kb_path = Path(args.kb)
+    kb = _load_json(kb_path)
+    result = merge_geocoding(kb, _load_json(Path(args.geocoding)), args.require_review_ok)
     out_path = Path(args.out) if args.out else kb_path
     _save_json(out_path, kb)
 
-    print(
-        f"Wrote {out_path} (updated={updated}, noted={noted}, skipped_review={skipped_review}, missing_in_kb={missing_in_kb})"
-    )
+    print(f"Wrote {out_path} {result}")
 
     return 0
 

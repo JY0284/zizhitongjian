@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from scripts.validate_artifacts import validate_artifacts
 
 
@@ -105,3 +107,16 @@ def test_validate_artifacts_reports_missing_files(tmp_path):
 
     assert "missing unified_knowledge.json" in errors
     assert "missing juan_year_index.json" in errors
+
+
+@pytest.mark.parametrize("payload", [[], None, {"locations": [1], "relations": [2]}])
+def test_malformed_containers_report_errors_instead_of_crashing(tmp_path, payload):
+    write_json(tmp_path / "unified_knowledge.json", payload)
+    write_json(tmp_path / "juan_year_index.json", {"juan_start_year": {}})
+    assert validate_artifacts(tmp_path)
+
+
+def test_invalid_json_reports_an_error(tmp_path):
+    (tmp_path / "unified_knowledge.json").write_text("{", encoding="utf-8")
+    write_json(tmp_path / "juan_year_index.json", {"juan_start_year": {}})
+    assert "Cannot read runtime JSON" in validate_artifacts(tmp_path)[0]

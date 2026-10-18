@@ -12,6 +12,7 @@ interface FilterControlsProps {
   syncJuanYear: boolean;
   syncAvailable: boolean;
   onSyncJuanYearChange: (enabled: boolean) => void;
+  onPreset: (juans: [number, number], years: [number | null, number | null]) => void;
 }
 
 export function FilterControls({
@@ -25,6 +26,7 @@ export function FilterControls({
   syncJuanYear,
   syncAvailable,
   onSyncJuanYearChange,
+  onPreset,
 }: FilterControlsProps) {
   const commitJuanOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter') {
@@ -159,17 +161,21 @@ export function FilterControls({
         <div className="flex flex-wrap gap-2">
           <button
             onClick={() => {
-              onJuanRangeChange([1, 1]);
-              onTimeRangeChange([null, null]);
+              onPreset([1, 1], [null, null]);
             }}
             className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
           >
             第一卷
           </button>
           <button
+            onClick={() => onPreset([1, 5], [null, null])}
+            className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
+          >
+            前五卷
+          </button>
+          <button
             onClick={() => {
-              onJuanRangeChange([1, maxJuan]);
-              onTimeRangeChange([-500, -400]);
+              onPreset([1, maxJuan], [-500, -400]);
             }}
             className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
           >
@@ -177,8 +183,7 @@ export function FilterControls({
           </button>
           <button
             onClick={() => {
-              onJuanRangeChange([1, maxJuan]);
-              onTimeRangeChange([null, null]);
+              onPreset([1, maxJuan], [null, null]);
             }}
             className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
           >

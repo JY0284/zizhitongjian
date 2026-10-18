@@ -127,7 +127,24 @@ export function unifiedNetworkGraphData(
 ): { nodes: RoleNodeUnified[]; links: RoleLinkUnified[] } {
   const links: RoleLinkUnified[] = [];
 
-  for (const relation of Object.values(kb.relations)) {
+  for (const original of Object.values(kb.relations)) {
+    let relation = original;
+    if (original.occurrences?.length) {
+      const occurrences = original.occurrences.filter(item =>
+        (!juanFilter || (item.juan_index >= juanFilter[0] && item.juan_index <= juanFilter[1])) &&
+        (yearRange.every(year => year === null) || (item.year !== null &&
+          item.year >= (yearRange[0] ?? -Infinity) && item.year <= (yearRange[1] ?? Infinity)))
+      );
+      if (!occurrences.length) continue;
+      relation = { ...original,
+        primary_action: occurrences[0].action,
+        action_types: [...new Set(occurrences.map(item => item.action))],
+        interaction_count: occurrences.length,
+        contexts: [...new Set(occurrences.map(item => item.context))],
+        source_juans: [...new Set(occurrences.map(item => item.juan_index))],
+        first_interaction_time: occurrences[0].time,
+      };
+    }
     if (juanFilter) {
       const [start, end] = juanFilter;
       const inRange = relation.source_juans.some((j) => j >= start && j <= end);
@@ -199,7 +216,7 @@ export function unifiedEventsToTimeline(
       id: event.id,
       name: event.name,
       time: event.time,
-      timeNumeric: event.time_start,
+      timeNumeric: event.time_start ?? null,
       location: event.location,
       participants: Array.from(event.participants),
       description: event.description,
@@ -244,11 +261,17 @@ export function calculateUnifiedPowerDistribution(
  */
 export function unifiedLocationsToList(
   kb: UnifiedKnowledgeBase,
-  juanFilter?: [number, number]
+  juanFilter?: [number, number],
+  yearRange: [number | null, number | null] = [null, null]
 ): UnifiedLocation[] {
   const locations: UnifiedLocation[] = [];
   
   for (const location of Object.values(kb.locations)) {
+    if (yearRange.some(year => year !== null) && !location.occurrences.some(occurrence =>
+      typeof occurrence.year === 'number' &&
+      occurrence.year >= (yearRange[0] ?? -Infinity) && occurrence.year <= (yearRange[1] ?? Infinity) &&
+      (!juanFilter || (occurrence.juan_index >= juanFilter[0] && occurrence.juan_index <= juanFilter[1]))
+    )) continue;
     // Apply juan filter if provided
     if (juanFilter) {
       const [start, end] = juanFilter;

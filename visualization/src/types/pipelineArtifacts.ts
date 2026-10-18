@@ -31,6 +31,7 @@ export interface JuanYearIndex {
   version: string;
   generated_at: string;
   juan_start_year: Record<string, number | null>; // key is juan_index serialized as string
+  juan_end_year?: Record<string, number | null>;
 }
 
 export interface LocationGeocodingEntry {

@@ -48,8 +48,8 @@ interface SimulationLink {
 function createDataKey(nodes: RoleNodeUnified[], links: RoleLinkUnified[]): string {
   const nodeIds = nodes.map(n => n.id).sort().join(',');
   const linkIds = links.map(l => {
-    const sourceId = typeof l.source === 'object' ? (l.source as any).id : l.source;
-    const targetId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+    const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
+    const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
     return `${sourceId}-${targetId}`;
   }).sort().join(',');
   return `${nodeIds}|${linkIds}`;
@@ -77,12 +77,13 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
   // Refs for zoom/pan functionality to center on focused nodes
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
   const nodesDataRef = useRef<SimulationNode[]>([]);
+  const fitLayoutRef = useRef<() => void>(() => {});
   
   // Interactive state
   const [searchTerm, setSearchTerm] = useState('');
   const [minAppearances, setMinAppearances] = useState(1);
   const [selectedPower, setSelectedPower] = useState<string>('all');
-  const [highlightedNode, setHighlightedNode] = useState<string | null>(null);
+  const [highlightOverride, setHighlightedNode] = useState<string | null>(null);
   const [notFoundMessage, setNotFoundMessage] = useState<string | null>(null);
 
   // Get unique powers for filter dropdown
@@ -106,15 +107,15 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
     const nodeIds = new Set(filteredNodes.map(n => n.id));
     return links
       .filter(l => {
-        const sourceId = typeof l.source === 'object' ? (l.source as any).id : l.source;
-        const targetId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+        const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
+        const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
         return nodeIds.has(sourceId) && nodeIds.has(targetId);
       })
       .map(l => ({
         ...l,
         // Reset source/target to string IDs for fresh simulation
-        source: typeof l.source === 'object' ? (l.source as any).id : l.source,
-        target: typeof l.target === 'object' ? (l.target as any).id : l.target,
+        source: typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source,
+        target: typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target,
       }));
   }, [links, filteredNodes]);
 
@@ -127,13 +128,10 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
     );
   }, [filteredNodes, searchTerm]);
 
-  useEffect(() => {
-    if (searchResult) {
-      setHighlightedNode(searchResult.id);
-    } else {
-      setHighlightedNode(null);
-    }
-  }, [searchResult]);
+  const searchResultRef = useRef(searchResult);
+  useEffect(() => { searchResultRef.current = searchResult; }, [searchResult]);
+
+  const highlightedNode = highlightOverride ?? searchResult?.id ?? null;
 
   /**
    * Center the graph view on a specific node with smooth animation.
@@ -191,6 +189,8 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
   useEffect(() => {
     if (focusNodeId) {
       // Clear any previous not-found message
+      // This consumes an external focus command and synchronizes the D3 view.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotFoundMessage(null);
       
       // Check if the node exists in filtered nodes (by ID, name, or alias)
@@ -243,7 +243,14 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
   }, [focusNodeId, filteredNodes, nodes, onFocusNodeHandled, centerOnNode]);
 
   useEffect(() => {
-    if (!svgRef.current || !containerRef.current || filteredNodes.length === 0) return;
+    if (!svgRef.current || !containerRef.current) return;
+    if (filteredNodes.length === 0) {
+      d3.select(svgRef.current).attr('height', 0).selectAll('*').remove();
+      nodesDataRef.current = [];
+      zoomRef.current = null;
+      prevDataKeyRef.current = '';
+      return;
+    }
 
     // PERFORMANCE CRITICAL: Check if the data actually changed by comparing keys.
     // This prevents simulation rebuild when only interactions (clicks, hovers) occur.
@@ -279,9 +286,11 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
     const g = svg.append('g');
 
     // Add zoom behavior
+    let viewAdjusted = false;
     const zoom = d3.zoom<SVGSVGElement, unknown>()
       .scaleExtent([0.1, 4])
       .on('zoom', (event) => {
+        viewAdjusted = true;
         g.attr('transform', event.transform);
       });
 
@@ -306,7 +315,9 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
       )
       .force('charge', d3.forceManyBody().strength(-300))
       .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('collision', d3.forceCollide().radius(40));
+      .force('x', d3.forceX(width / 2).strength(0.08))
+      .force('y', d3.forceY(height / 2).strength(0.10))
+      .force('collision', d3.forceCollide().radius(24));
     
     // Store simulation reference
     simulationRef.current = simulation;
@@ -346,19 +357,20 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
         event.stopPropagation();
         event.stopImmediatePropagation();
         const linkData = d as RoleLinkUnified;
-        const sourceId = typeof linkData.source === 'object' ? (linkData.source as any).id : linkData.source;
-        const targetId = typeof linkData.target === 'object' ? (linkData.target as any).id : linkData.target;
+        const sourceId = typeof linkData.source === 'object' ? (linkData.source as SimulationNode).id : linkData.source;
+        const targetId = typeof linkData.target === 'object' ? (linkData.target as SimulationNode).id : linkData.target;
         onLinkClickRef.current?.(sourceId, targetId);
       })
       .on('mouseover', (event, d) => {
         const linkData = d as RoleLinkUnified;
-        const sourceId = typeof linkData.source === 'object' ? (linkData.source as any).id : linkData.source;
-        const targetId = typeof linkData.target === 'object' ? (linkData.target as any).id : linkData.target;
+        const sourceId = typeof linkData.source === 'object' ? (linkData.source as SimulationNode).id : linkData.source;
+        const targetId = typeof linkData.target === 'object' ? (linkData.target as SimulationNode).id : linkData.target;
         const sourceNode = filteredNodes.find(n => n.id === sourceId);
         const targetNode = filteredNodes.find(n => n.id === targetId);
+        const [x, y] = d3.pointer(event, containerRef.current);
         setLinkTooltip({
-          x: event.pageX,
-          y: event.pageY,
+          x: Math.max(8, Math.min(x + 10, (containerRef.current?.clientWidth ?? 800) - 460)),
+          y: Math.max(8, Math.min(y + 10, 400)),
           content: linkData,
           sourceName: sourceNode?.name || sourceId,
           targetName: targetNode?.name || targetId,
@@ -386,6 +398,15 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
       .enter()
       .append('g')
       .attr('class', 'node-group')
+      .attr('role', 'button')
+      .attr('aria-label', d => d.name)
+      .attr('tabindex', 0)
+      .on('keydown', (event, d) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onNodeClickRef.current?.(d);
+        }
+      })
       .style('cursor', 'pointer')
       .call(
         d3
@@ -407,16 +428,17 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
       )
       .on('click', (_, d) => onNodeClickRef.current?.(d))
       .on('mouseover', (event, d) => {
+        const [x, y] = d3.pointer(event, containerRef.current);
         setTooltip({
-          x: event.pageX,
-          y: event.pageY,
+          x: Math.max(8, Math.min(x + 10, (containerRef.current?.clientWidth ?? 800) - 340)),
+          y: Math.max(8, Math.min(y + 10, 400)),
           content: d,
         });
         setHighlightedNode(d.id);
       })
       .on('mouseout', () => {
         setTooltip(null);
-        setHighlightedNode(searchResult ? searchResult.id : null);
+        setHighlightedNode(searchResultRef.current?.id ?? null);
       });
 
     // Node circles
@@ -447,6 +469,23 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
 
       node.attr('transform', (d) => `translate(${d.x ?? 0}, ${d.y ?? 0})`);
     });
+
+    // Disconnected groups can settle outside the SVG. Fit the initial layout,
+    // while preserving any pan, zoom, or focused-node navigation by the reader.
+    const fitLayout = () => {
+      if (width <= 64) return;
+      const positions = simulation.nodes();
+      const minX = d3.min(positions, d => d.x ?? 0) ?? 0;
+      const maxX = d3.max(positions, d => d.x ?? 0) ?? width;
+      const minY = d3.min(positions, d => d.y ?? 0) ?? 0;
+      const maxY = d3.max(positions, d => d.y ?? 0) ?? height;
+      const scale = Math.max(0.1, Math.min(1, (width - 64) / Math.max(1, maxX - minX),
+        (height - 64) / Math.max(1, maxY - minY)));
+      svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2)
+        .scale(scale).translate(-(minX + maxX) / 2, -(minY + maxY) / 2));
+    };
+    fitLayoutRef.current = fitLayout;
+    simulation.on('end', () => { if (!viewAdjusted) fitLayout(); });
 
     // Add legend
     const legend = svg
@@ -483,8 +522,8 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
     if (!svgRef.current) return;
     
     const svg = d3.select(svgRef.current);
-    const node = svg.selectAll('.node-group'); // Select only node groups, not legend
-    const link = svg.selectAll('line');
+    const node = svg.selectAll<SVGGElement, SimulationNode>('.node-group'); // Select only node groups, not legend
+    const link = svg.selectAll<SVGLineElement, SimulationLink>('line');
 
     if (highlightedNode) {
       // Find connected nodes
@@ -492,18 +531,18 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
       connectedNodeIds.add(highlightedNode);
       
       filteredLinks.forEach(l => {
-        const sourceId = typeof l.source === 'object' ? (l.source as any).id : l.source;
-        const targetId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+        const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
+        const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
         
         if (sourceId === highlightedNode) connectedNodeIds.add(targetId);
         if (targetId === highlightedNode) connectedNodeIds.add(sourceId);
       });
 
       // Dim unconnected nodes
-      node.style('opacity', (d: any) => d && d.id && connectedNodeIds.has(d.id) ? 1 : 0.1);
+      node.style('opacity', (d) => d && d.id && connectedNodeIds.has(d.id) ? 1 : 0.1);
       
       // Dim unconnected links
-      link.style('opacity', (d: any) => {
+      link.style('opacity', (d) => {
         if (!d) return 0.1;
         const sourceId = typeof d.source === 'object' ? d.source?.id : d.source;
         const targetId = typeof d.target === 'object' ? d.target?.id : d.target;
@@ -528,7 +567,10 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
               type="text"
               placeholder="搜索人物..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => { setSearchTerm(e.target.value); setHighlightedNode(null); }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' && searchResult) centerOnNode(searchResult.id);
+              }}
               className="px-3 py-1 border border-[#d4c5b5] rounded-md text-sm focus:outline-none focus:border-[#8b4513] w-32"
             />
             {searchResult && (
@@ -569,7 +611,19 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
         </div>
       </div>
 
+      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
+        <button className="rounded border px-2 py-1" onClick={() => fitLayoutRef.current()}>适配画布</button>
+        {[['放大', 1.5], ['缩小', 1 / 1.5]].map(([label, factor]) => (
+          <button key={String(label)} className="rounded border px-2 py-1" onClick={() => {
+            if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().duration(200)
+              .call(zoomRef.current.scaleBy, Number(factor));
+          }}>{label}</button>
+        ))}
+        <span>搜索后按 Enter 定位；滚轮缩放，拖动画布或人物。</span>
+      </div>
+
       <svg ref={svgRef} className="w-full" />
+      {filteredNodes.length === 0 && <p className="py-12 text-center text-gray-500">当前筛选范围没有人物，请调整筛选条件。</p>}
       
       {/* Toast notification for entity not found */}
       {notFoundMessage && (
@@ -585,8 +639,8 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
         <div
           className="absolute bg-white border border-[#d4c5b5] rounded-lg shadow-lg p-3 z-10 w-80 max-w-[90vw] pointer-events-none break-words"
           style={{
-            left: Math.max(8, Math.min(tooltip.x - 100, (containerRef.current?.clientWidth ?? 800) - 340)),
-            top: Math.max(8, Math.min(tooltip.y - 200, 400)),
+            left: tooltip.x,
+            top: tooltip.y,
           }}
         >
           <h4 className="font-bold text-[#8b4513]">{tooltip.content.name}</h4>
@@ -601,8 +655,8 @@ export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNode
         <div
           className="absolute bg-white border border-[#8b4513] rounded-lg shadow-lg p-3 z-10 w-[28rem] max-w-[90vw] pointer-events-none break-words"
           style={{
-            left: Math.max(8, Math.min(linkTooltip.x + 10, (containerRef.current?.clientWidth ?? 800) - 460)),
-            top: Math.max(8, Math.min(linkTooltip.y - 100, 400)),
+            left: linkTooltip.x,
+            top: linkTooltip.y,
           }}
         >
           <h4 className="font-bold text-[#8b4513]">

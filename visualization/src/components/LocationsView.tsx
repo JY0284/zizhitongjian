@@ -1,3 +1,4 @@
+import { hasMapPosition, referenceCoordinates } from '../utils/mapCoordinates';
 import { useMemo, useState } from 'react';
 import type { UnifiedLocation } from '../types/unified';
 
@@ -41,7 +42,7 @@ export function LocationsView({
       <div className="flex items-center justify-between mb-4">
         <h3 className="text-lg font-bold text-[#2c1810]">地点列表</h3>
         <div className="text-sm text-gray-500">
-          {withCoords.length} 个有坐标 / {withoutCoords.length} 个无坐标
+          {withCoords.length} 个已核验 · {withoutCoords.filter(loc => referenceCoordinates(loc)).length} 个现代参考 · 共 {locations.length} 个地点
         </div>
       </div>
 
@@ -74,16 +75,16 @@ export function LocationsView({
                 {loc.location_type && (
                   <span className="text-xs px-2 py-1 bg-[#d4a574] text-white rounded">{loc.location_type}</span>
                 )}
-                {loc.coordinates && onNavigateToMap && (
+                {hasMapPosition(loc) && onNavigateToMap && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onNavigateToMap(loc);
                     }}
                     className="text-xs px-2 py-1 bg-[#faf8f5] border border-[#d4c5b5] text-[#8b4513] rounded hover:bg-white transition-colors"
-                    title="在地图中查看"
+                    title={loc.coordinates ? '在地图中查看' : '查看现代参考位置（古址待核验）'}
                   >
-                    地图
+                    {loc.coordinates ? '地图' : '参考地图'}
                   </button>
                 )}
               </div>

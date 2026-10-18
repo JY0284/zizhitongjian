@@ -54,6 +54,8 @@ def find_chunk(book: list[dict], juan_index: int, segment_index: int, chunk_star
 
 def build_input(segment_data: dict, segment_index: int, chunk_start: int, chunk_size: int, context_size: int) -> tuple[dict, list[str], int]:
     sentences = segment_data["sentences"]
+    if chunk_size < 1 or context_size < 0 or not 0 <= chunk_start < len(sentences):
+        raise ValueError("Invalid chunk range: use a positive size and an existing sentence index")
     chunk_end = min(chunk_start + chunk_size, len(sentences))
     chunk_sentences = sentences[chunk_start:chunk_end]
     context_start = max(0, chunk_start - context_size)
@@ -73,6 +75,7 @@ def build_input(segment_data: dict, segment_index: int, chunk_start: int, chunk_
 
 
 def main() -> int:
+    load_dotenv_if_present(PROJECT_ROOT / ".env")
     parser = argparse.ArgumentParser(description="Run one bounded real DeepSeek extraction smoke")
     parser.add_argument("--book", default="adapted_book.json", help="Path to adapted book JSON")
     parser.add_argument("--prompt", default="prompts/sys_entity_relation_extraction.md", help="Path to extraction prompt")
@@ -84,8 +87,6 @@ def main() -> int:
     parser.add_argument("--context-size", type=int, default=5, help="Number of preceding context sentences")
     parser.add_argument("--model", default=os.getenv("DEEPSEEK_MODEL", "deepseek-v4-flash"), help="DeepSeek model name")
     args = parser.parse_args()
-
-    load_dotenv_if_present(PROJECT_ROOT / ".env")
     api_key = os.getenv("DEEPSEEK_API_KEY")
     if not api_key:
         raise SystemExit("DEEPSEEK_API_KEY is missing. Add it to .env or export it before running.")
@@ -104,7 +105,7 @@ def main() -> int:
     chat_model = ChatDeepSeek(
         model=args.model,
         temperature=0.1,
-        timeout=None,
+        timeout=120,
         max_retries=0,
         api_key=api_key,
         cache=False,

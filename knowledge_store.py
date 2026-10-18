@@ -43,6 +43,7 @@ class ChunkExtraction(BaseModel):
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    quality_notes: List[str] = Field(default_factory=list)
     
 
 class KnowledgeStore:
@@ -94,8 +95,16 @@ class KnowledgeStore:
         }
 
     def _save_metadata(self):
-        with open(self.metadata_path, 'w', encoding='utf-8') as f:
-            json.dump(self.metadata, f, ensure_ascii=False, indent=2)
+        self._atomic_save(self.metadata_path, self.metadata)
+
+    @staticmethod
+    def _atomic_save(path: Path, data):
+        temp = path.with_suffix(path.suffix + '.tmp')
+        with temp.open('w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(temp, path)
 
     def _juan_file_path(self, juan_index: int) -> Path:
         return self.store_dir / f"juan_{juan_index}.json"
@@ -109,8 +118,7 @@ class KnowledgeStore:
 
     def _save_juan_data(self, juan_index: int, data: Dict[str, Any]):
         path = self._juan_file_path(juan_index)
-        with open(path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+        self._atomic_save(path, data)
 
     def _init_processed_keys(self):
         # Scan all juan files to populate the index

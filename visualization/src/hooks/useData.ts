@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import type { JuanData, Metadata } from '../types';
 
 // In a real application, this would fetch from an API
@@ -15,8 +15,8 @@ export function useHistoricalData() {
       try {
         // Load data from public directory
         const [juanResponse, metadataResponse] = await Promise.all([
-          fetch('/data/juan_1.json'),
-          fetch('/data/metadata.json'),
+          fetch(`${import.meta.env.BASE_URL}data/juan_1.json`),
+          fetch(`${import.meta.env.BASE_URL}data/metadata.json`),
         ]);
 
         if (!juanResponse.ok || !metadataResponse.ok) {
@@ -44,15 +44,11 @@ export function useHistoricalData() {
 export function useFilteredData(
   data: JuanData | null,
   juanRange: [number, number],
-  timeRange: [number | null, number | null]
+  _timeRange: [number | null, number | null]
 ) {
-  const [filteredData, setFilteredData] = useState<JuanData | null>(null);
-
-  useEffect(() => {
-    if (!data) {
-      setFilteredData(null);
-      return;
-    }
+  void _timeRange; // Legacy hook: this schema supports volume filtering only.
+  return useMemo(() => {
+    if (!data) return null;
 
     const filtered: JuanData = {};
     Object.entries(data).forEach(([key, extraction]) => {
@@ -65,8 +61,6 @@ export function useFilteredData(
       }
     });
 
-    setFilteredData(filtered);
-  }, [data, juanRange, timeRange]);
-
-  return filteredData;
+    return filtered;
+  }, [data, juanRange]);
 }

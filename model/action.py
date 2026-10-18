@@ -1,5 +1,5 @@
 from typing import List
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 from .role import Role
 
@@ -18,10 +18,12 @@ class Action(BaseModel):
     )
     
     from_roles: List[str] = Field(
+        validation_alias=AliasChoices("from_roles", "from"),
         description="所有主动方实体名称列表，表示动作的发起者，必须出现在entities中"
     )
     
     to_roles: List[str] = Field(
+        validation_alias=AliasChoices("to_roles", "to"),
         description="所有接收方/被动方实体名称列表，表示动作的承受者，必须出现在entities中"
     )
     
@@ -52,6 +54,7 @@ class Action(BaseModel):
         default=False,
         description="是否为评论、议论或观点表达，而非客观历史事实"
     )
+    is_retrospective: bool = Field(default=False, description="Whether this action is a recalled earlier event rather than current-year narration")
 
     sentence_indexes_in_segment: List[int] = Field(
         default_factory=list,
@@ -74,3 +77,8 @@ class Action(BaseModel):
         if v is None:
             return ""
         return v
+
+    @field_validator('time', 'result', 'event_name', 'location', mode='before')
+    @classmethod
+    def normalize_unknown_optional(cls, value):
+        return None if isinstance(value, str) and value.strip().lower() in {'none', 'null', ''} else value
