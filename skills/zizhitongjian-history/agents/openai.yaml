@@ -1,0 +1,4 @@
+interface:
+  display_name: "资治通鉴检索"
+  short_description: "检索资治通鉴原文与人物关系，追溯出处并区分模型推断和文本证据"
+  default_prompt: "使用 $zizhitongjian-history 查找陈庄与秦国的关系，并引用文言原文。"

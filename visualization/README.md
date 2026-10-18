@@ -40,9 +40,9 @@
 
 ## 开发
 
-先在仓库根目录运行 `uv sync --locked --python 3.12` 和
-`uv run python scripts/prepare_demo.py`，再进入本目录。正式抽取和发布流程见根目录 README。
-需要 Node.js 22.13+。样例模式不会调用 API；关系网络可预览，事件和地图坐标暂缺。
+先在仓库根目录运行 `python scripts/build_pages.py --install-snapshot`，再进入本目录。
+这会校验并安装仓库已提交的前五卷完整快照，不需要 API Key、uv 或 Python 第三方依赖。
+需要 Python 3.11+ 和 Node.js 22.13+。正式抽取和发布流程见根目录 README。
 
 ```bash
 # 安装依赖
@@ -69,12 +69,15 @@ The current app reads unified runtime artifacts:
 - `public/data/unified_knowledge.json`
 - `public/data/juan_year_index.json`
 
-If these files are missing, the app will show a load error. For an offline preview, run `uv run python scripts/prepare_demo.py` in the repo root. To publish real extractions, run `uv run python scripts/build_data.py --publish-frontend`.
+缺少这些文件时，页面会提示加载失败。请在根目录运行 `python scripts/build_pages.py --install-snapshot`，
+或按根目录 README 的“现成数据下载”链接下载前两个 JSON，放入上述目录。
 
-本次 Astra 前五卷数据的离线发布命令见根目录 README 的“本次升级”段落，
-使用 `data/store-astra-v2`。不要使用默认 `data/store` 构建命令覆盖新版结果。
+维护者重新处理 Astra 抽取缓存时使用 `data/store-astra-v2`，具体命令见根目录 README。
+该缓存仅保存在抽取机器上；普通使用者使用公开快照即可，不必重新跑模型。
+旧 `prepare_demo.py` 仅提供最小关系网样例，默认 `data/store` 也不代表最新 Astra 结果。
 
-`public/data/.gitkeep` exists only to keep the runtime data directory visible. Generated JSON files in this directory should be produced by the root pipeline and reviewed before publishing.
+`public/data/.gitkeep` 保留运行时目录；该目录的 JSON 不纳入 Git。对外版本存放于
+`snapshot/`，由 `manifest.json` 记录覆盖范围与 SHA-256，并在部署时校验。
 
 ## 项目结构
 

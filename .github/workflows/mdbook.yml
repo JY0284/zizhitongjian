@@ -29,6 +29,8 @@ jobs:
         run: |
           python scripts/validate_artifacts.py --data-dir visualization/snapshot
           python scripts/build_pages.py --install-snapshot
+      - name: Test the offline Agent query interface
+        run: python -m unittest discover -s tests -p test_agent_query.py
       - name: Check and build the explorer
         working-directory: visualization
         env:
