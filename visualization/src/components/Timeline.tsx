@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import type { TimelineEventUnified } from "../types/unified";
 import { formatYear, timelineGroups } from "../utils/exploration";
+import { TimelineOverview } from "./TimelineOverview";
 
 interface TimelineProps {
   events: TimelineEventUnified[];
@@ -67,6 +68,17 @@ export function Timeline({ events, aliasGroups, onEventClick }: TimelineProps) {
           年份待考 · {undated.length}
         </button>
       </div>
+      {activeLane === "dated" && years.length > 0 && (
+        <TimelineOverview
+          key={`${years[0][0]}-${years[years.length - 1][0]}-${query}`}
+          years={years}
+          selectedYear={selected?.[0]}
+          onSelect={(value) => {
+            setYear(value);
+            setVisibleCount(20);
+          }}
+        />
+      )}
       {matches.length === 0 ? (
         <div className="empty-state">
           <h3>{query ? "没有匹配的事件" : "这段范围还没有事件数据"}</h3>

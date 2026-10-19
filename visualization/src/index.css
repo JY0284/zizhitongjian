@@ -81,6 +81,14 @@ p {
 .skip-link:focus {
   top: 10px;
 }
+.skip-link:not(:focus) {
+  clip-path: inset(50%);
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  padding: 0;
+  white-space: nowrap;
+}
 .site-header {
   background: #edf1e9;
   border-top: 5px solid var(--teal);
@@ -1386,5 +1394,111 @@ input[type="checkbox"] {
     scroll-behavior: auto !important;
     animation: none !important;
     transition: none !important;
+  }
+}
+
+.timeline-overview {
+  margin: 18px 0 24px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #f8faf6;
+}
+.timeline-overview summary {
+  cursor: pointer;
+  font-weight: 650;
+}
+.timeline-overview summary span {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--muted);
+  margin-left: 8px;
+}
+.overview-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+.overview-controls button {
+  border: 1px solid var(--line);
+  background: white;
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.overview-controls button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.overview-range,
+.overview-help {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.overview-chart {
+  display: block;
+  cursor: grab;
+  touch-action: pan-y;
+  user-select: none;
+}
+.overview-chart:active {
+  cursor: grabbing;
+}
+.overview-chart text {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.overview-chart g[role="button"] {
+  cursor: pointer;
+}
+.overview-chart g:hover rect:last-child,
+.overview-chart g:focus rect:last-child,
+.overview-chart .selected-bucket {
+  opacity: 1;
+  stroke: #153d34;
+  stroke-width: 1.5;
+}
+.overview-context {
+  position: relative;
+  height: 5px;
+  background: #dde7e0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+.overview-context span {
+  position: absolute;
+  height: 100%;
+  min-width: 2px;
+  background: var(--teal);
+}
+.density-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+.density-control input {
+  width: 160px;
+  max-width: 100%;
+  accent-color: var(--teal);
+}
+.graph-edge:focus-visible {
+  stroke: var(--teal);
+  stroke-opacity: 0.4;
+  outline: none;
+}
+@media (max-width: 600px) {
+  .timeline-overview {
+    padding: 12px;
+  }
+  .timeline-overview summary span {
+    display: block;
+    margin: 5px 0 0;
   }
 }

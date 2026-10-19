@@ -7,6 +7,12 @@
 
 ## 更新记录
 
+- **2026.10.19（交互与视觉升级）**
+    - 保留原有亮点，新增可折叠的事件密度概览；随视窗自动聚类，支持缩放、拖动与按钮平移、点击展开和别名搜索联动。
+    - 关系网保留全景、拖拽、缩放和人物/连线详情，增加重点人物、直接关系聚焦、密度筛选、文字关系列表与键盘操作。
+    - 五个视图统一视觉与移动布局；筛选先编辑再应用，详情支持 Escape、焦点恢复与跨卷返回。
+    - 更新全部 9 张旧演示图，新增人物聚焦、势力人物和移动端 3 张实拍；[截图与功能核对](demo/showcase.md)记录复现步骤。
+
 - **2026.10.18（前五卷上线）**
     - GitHub Pages 同时发布交互探索与文白对照阅读；无需内网转发或自建服务器。
     - GPT-6 Astra / high 与更严格的证据提示词，保留原文依据和模型版本。
@@ -31,15 +37,18 @@
         - 多处结构/可读性重构与健壮 JSON 解析复用
         - 任务地图与 UX 规范补充与更新；README 增加地图 Demo 截图
 
-## 效果预览（阶段性成果）
+## 效果预览（当前版本）
+
+以下均为 2026-10-19 使用仓库公开快照拍摄的真实界面；模型抽取结果仍需核对原文。
 
 | 主界面（时间轴） | 核心能力：人物关系网 |
 | --- | --- |
-| ![主界面与时间轴](https://github.com/JY0284/zizhitongjian/blob/main/demo/main_page_and_events_timeline.png) | ![关系网络](https://github.com/JY0284/zizhitongjian/blob/main/demo/relation_network_1.png) |
+| ![主界面与时间轴](demo/main_page_and_events_timeline.jpg) | ![关系网络](demo/relation_network_1.jpg) |
 
 - **时间轴**：事件密集时自动聚类；支持缩放/平移/搜索
 - **人物关系网**：点击人物/关系查看详情与交互事件（体现结构化的核心成果）
-- **地点**：地点列表与详情，串起相关人物与事件
+- **地点**：地点列表与详情，串起相关人物与事件；现代参考地图与古址核验状态分开显示
+- **势力与移动阅读**：点击势力读成员，手机上折叠筛选、横向选年；保留文白对照和出处入口
 
 ## 文白对照阅读
 [阅读书籍点击](https://jy0284.github.io/zizhitongjian/chapters/001_资治通鉴第一卷(周纪).html)
@@ -98,7 +107,7 @@ Agent 可直接读取该 `SKILL.md`。若使用 Codex，也可把整个 `skills/
 ## 简介
 项目地址：[zizhitongjian](https://github.com/JY0284/zizhitongjian)
 
-这个仓库是有关**资治通鉴-文白对照**的可供**人类和机器阅读阅读**并进行**相关数据研究**的项目。
+这个仓库是有关**资治通鉴-文白对照**的可供**人类和机器阅读**并进行**相关数据研究**的项目。
 
 本项目中的文本格式按照原书的`卷`进行整理，`chapters`目录下按照`[0-9]+_资治通鉴卷名.md`进行分别存储：
 
@@ -141,29 +150,43 @@ chapters
 ### 主要功能展示
 
 #### 1. 交互式历史事件时间轴 (Interactive Timeline)
-全新的时间轴组件支持智能聚类、缩放平移、全局概览及实时搜索。
+时间全景按视窗密度自动聚类，支持缩放、拖动或按钮平移；点击聚合柱展开年份，单年柱选择事件。概览下方保留逐年卡片阅读，搜索同时更新概览和列表，“商鞅”也可找到“公孙鞅”。年份待考单独列出，不混入确定年代。
 - **主界面与时间轴概览**：
-![主界面与时间轴](https://github.com/JY0284/zizhitongjian/blob/main/demo/main_page_and_events_timeline.png)
+![主界面与时间轴](demo/main_page_and_events_timeline.jpg)
 - **时间轴细节交互**：
-![时间轴细节](https://github.com/JY0284/zizhitongjian/blob/main/demo/time_line.png)
+![时间轴细节](demo/time_line.jpg)
+- **事件详情与人物、地点入口**：
+![事件详情](demo/timeline_event_location.jpg)
 
 #### 2. 复杂人物关系网络 (Relation Network)
-通过力导向图展示人物之间的复杂关系，支持点击节点查看人物详情，点击连线查看具体交互事件。
+通过力导向图展示人物关系，保留拖拽、缩放、势力颜色与按提及次数调整的节点大小。默认展示最多 50 位重点人物，可切换全部人物、筛选势力或调整密度；搜索姓名聚焦直接关系。点击节点阅读人物，点击连线查看双向互动，节点与连线也支持 Enter/空格操作。
 - **关系网络全景**：
-![关系网络](https://github.com/JY0284/zizhitongjian/blob/main/demo/relation_network_1.png)
+![关系网络](demo/relation_network_1.jpg)
+- **人物聚焦（司马错）**：
+![人物聚焦](demo/relation_network_focus.jpg)
 - **人物详情查看**：
-![人物详情](https://github.com/JY0284/zizhitongjian/blob/main/demo/relation_network_node_detail.png)
+![人物详情](demo/relation_network_node_detail.jpg)
 - **关系细节查看**：
-![关系细节](https://github.com/JY0284/zizhitongjian/blob/main/demo/relation_network_edge_detail.png)
+![关系细节](demo/relation_network_edge_detail.jpg)
 
 #### 3. 历史地理与地点 (Historical Locations)
-展示历史地名及其相关事件，支持查看地点详情。
+展示历史地名、今地名和相关事件，可搜索、查看详情，再跳转到人物或地图。跨卷人物会自动切换范围，浏览器返回可恢复原来的地点与卷数。地图当前有 25 个现代参考位置，尚无已核验古址；参考点不用于人物轨迹。
 - **地点列表**：
-![地点列表](https://github.com/JY0284/zizhitongjian/blob/main/demo/location_list.png)
+![地点列表](demo/location_list.jpg)
 - **地点详情**：
-![地点详情](https://github.com/JY0284/zizhitongjian/blob/main/demo/location_list_node_detail.png)
+![地点详情](demo/location_list_node_detail.jpg)
 - **地图模式（OpenStreetMap）**：
-![地图模式](https://github.com/JY0284/zizhitongjian/blob/main/demo/map_view.png)
+![地图模式](demo/map_view.jpg)
+
+#### 4. 势力人物与移动阅读
+
+按已知归属展示关系网中的人物数量，点击势力查看成员，再点击姓名阅读详情；数量不代表国力、人口或疆域。手机上可折叠筛选与时间全景，横向选择年份，保留全部五个视图。
+
+![势力与人物](demo/power_members.jpg)
+
+<img src="demo/mobile_timeline.jpg" alt="手机上的时间轴与事件阅读" width="390" />
+
+原有功能及新增交互的逐项核对、截图复现步骤见 [演示截图说明](demo/showcase.md)。
 
 ### 本地启动方法
 
@@ -310,7 +333,7 @@ python -c "from pathlib import Path; from scripts.run_budgeted_extraction import
 - [x] 文本数据结构化，便于利用数据分析工具和可视化工具进行处理
 - [x] 结构化数据使用样例
 - [x] AI辅助理解及可视化样例
-- [x] AI辅助获取全书知识图谱（人物、事件及其关系，以及在格式化数据中的精确定位）
+- [x] AI辅助知识图谱抽取流水线（人物、事件、关系与原文定位；支持全书处理，当前公开完整前五卷）
 - [ ] 对话交互式资治通鉴
 - [ ] ...
 

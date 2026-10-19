@@ -7,18 +7,21 @@
 ### 📅 时间轴视图
 - 展示历史事件按时间顺序排列
 - 支持点击查看事件详情
-- 可视化事件与时间的关系
+- 事件密度全景自动聚类，支持缩放、拖动/按钮平移与点击展开
+- 搜索同时过滤概览与事件卡片，支持人物别名；年份待考单列
 
 ### 🔗 人物关系网络图
 - D3.js 力导向图展示人物间的互动关系
 - 节点大小表示出现频率
 - 颜色区分不同势力
-- 支持拖拽交互和缩放
+- 支持拖拽交互、缩放与画布适配
+- 重点/全部人物切换、势力和密度筛选，搜索后聚焦直接关系
+- 人物节点与关系连线支持鼠标及 Enter/空格操作；关系另有文字列表
 - 详情中的人物链接支持跨卷自动切换、别名解析与返回原筛选；国家与组织单独显示
 
 ### 📊 势力分布图
 - 柱状图展示各势力的人物数量
-- 直观了解各方势力对比
+- 点击势力查看成员，再打开人物详情；统计仅反映已知归属，不表示国力
 
 ### 📍 地点列表
 - 展示所有出现的历史地点
@@ -29,6 +32,12 @@
 - **卷范围筛选**: 选择要查看的卷数范围（卷1到卷294）
 - **时间范围筛选**: 按公元前年份筛选
 - **快速筛选**: 预设的常用筛选条件
+
+## 当前界面
+
+![关系聚焦](../demo/relation_network_focus.jpg)
+
+[完整截图与功能核对](../demo/showcase.md)包含五个视图、详情导航和移动端实图。
 
 ## 技术栈
 
@@ -85,16 +94,18 @@ The current app reads unified runtime artifacts:
 src/
 ├── components/          # 可视化组件
 │   ├── Timeline.tsx     # 时间轴组件
+│   ├── TimelineOverview.tsx # 聚类概览与时间视窗
 │   ├── NetworkGraph.tsx # 关系网络图
 │   ├── PowerChart.tsx   # 势力分布图
 │   ├── FilterControls.tsx # 筛选控件
 │   └── DetailPanels.tsx # 详情面板
 ├── hooks/
-│   └── useData.ts       # 数据加载 Hook
+│   └── useUnifiedData.ts       # 数据加载 Hook
 ├── types/
-│   └── index.ts         # TypeScript 类型定义
+│   └── unified.ts         # TypeScript 类型定义
 ├── utils/
-│   └── dataProcessing.ts # 数据处理工具
+│   ├── unifiedDataProcessing.ts # 数据派生与范围过滤
+│   └── exploration.ts   # 搜索、聚类与密度筛选
 ├── App.tsx              # 主应用组件
 └── main.tsx             # 入口文件
 ```

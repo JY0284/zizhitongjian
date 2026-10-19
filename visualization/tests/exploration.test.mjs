@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   timelineGroups,
+  timelineBuckets,
+  clampYearWindow,
   networkSubset,
   eventsInYears,
   readFilterDraft,
@@ -143,4 +145,40 @@ test("year filters exclude undated events and respect inclusive single-year boun
     eventsInYears(records, [-350, null]).map((item) => item.id),
     ["b"],
   );
+});
+
+test("overview buckets conserve events across adjacent BCE boundaries and zoom levels", () => {
+  const years = timelineGroups(
+    Array.from({ length: 80 }, (_, i) =>
+      event(String(i), -440 + Math.floor(i / 2)),
+    ),
+    "",
+  ).years;
+  for (const capacity of [1, 8, 40, 100]) {
+    const buckets = timelineBuckets(years, -440, -400, capacity);
+    assert.equal(
+      buckets.reduce((sum, bucket) => sum + bucket.count, 0),
+      80,
+    );
+    assert.equal(new Set(buckets.flatMap((bucket) => bucket.years)).size, 40);
+    assert.ok(buckets.length <= capacity);
+  }
+  assert.equal(timelineBuckets(years, -420, -419, 40)[0].count, 2);
+  assert.deepEqual(timelineBuckets(years, -399, -390, 40), []);
+});
+
+test("overview zoom and pan stay within the complete range, including a single year", () => {
+  assert.deepEqual(clampYearWindow(-500, 20, -403, -249), [-403, -383]);
+  assert.deepEqual(clampYearWindow(-250, 20, -403, -249), [-269, -249]);
+  assert.deepEqual(clampYearWindow(-350, 999, -403, -249), [-403, -249]);
+  assert.deepEqual(clampYearWindow(-300, 0.2, -300, -299), [-300, -299]);
+});
+
+test("network density excludes faint nodes and dangling edges without hiding focused neighbors", () => {
+  const sparse = networkSubset(nodes, links, "all", null, "all", 58);
+  assert.ok(sparse.nodes.every((node) => node.appearances >= 58));
+  assert.equal(sparse.links.length, 1);
+  const focused = networkSubset(nodes, links, "person", "59", "all", 58);
+  assert.equal(focused.nodes.length, 3);
+  assert.equal(focused.links.length, 2);
 });

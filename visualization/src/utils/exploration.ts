@@ -67,8 +67,13 @@ export function networkSubset(
   mode: "core" | "all" | "person",
   focus: string | null,
   power: string,
+  minAppearances = 0,
 ) {
-  let visible = nodes.filter((node) => power === "all" || node.power === power);
+  let visible = nodes.filter(
+    (node) =>
+      (power === "all" || node.power === power) &&
+      node.appearances >= minAppearances,
+  );
   if (mode === "person" && focus) {
     const ids = new Set([focus]);
     for (const link of links) {
@@ -86,6 +91,45 @@ export function networkSubset(
     nodes: visible,
     links: links.filter((link) => ids.has(link.source) && ids.has(link.target)),
   };
+}
+
+/** Half-open year windows keep boundary events in exactly one bucket. */
+export function timelineBuckets(
+  years: [number, TimelineEventUnified[]][],
+  start: number,
+  end: number,
+  capacity: number,
+) {
+  const step = Math.max(1, Math.ceil((end - start) / Math.max(1, capacity)));
+  const buckets = new Map<
+    number,
+    { start: number; end: number; count: number; years: number[] }
+  >();
+  for (const [year, items] of years) {
+    if (year < start || year >= end) continue;
+    const lower = start + Math.floor((year - start) / step) * step;
+    const bucket = buckets.get(lower) ?? {
+      start: lower,
+      end: Math.min(end, lower + step),
+      count: 0,
+      years: [],
+    };
+    bucket.count += items.length;
+    bucket.years.push(year);
+    buckets.set(lower, bucket);
+  }
+  return [...buckets.values()].sort((a, b) => a.start - b.start);
+}
+
+export function clampYearWindow(
+  start: number,
+  span: number,
+  min: number,
+  max: number,
+): [number, number] {
+  const width = Math.max(1, Math.min(max - min, Math.round(span)));
+  const lower = Math.max(min, Math.min(max - width, Math.round(start)));
+  return [lower, lower + width];
 }
 
 export function readFilterDraft(

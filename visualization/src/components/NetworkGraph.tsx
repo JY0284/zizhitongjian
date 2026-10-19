@@ -42,18 +42,29 @@ export function NetworkGraph({
   const [mode, setMode] = useState<"core" | "all" | "person">("core");
   const [focus, setFocus] = useState<string | null>(null);
   const [power, setPower] = useState("all");
+  const [minAppearances, setMinAppearances] = useState(1);
   const [hint, setHint] = useState("");
   const powers = useMemo(
     () =>
       [...new Set(nodes.map((node) => node.power).filter(Boolean))] as string[],
     [nodes],
   );
+  const maxAppearances = Math.max(1, ...nodes.map((node) => node.appearances));
+  const activeDensity = Math.min(minAppearances, maxAppearances);
   const activePower = powers.includes(power) ? power : "all";
   const focusNode = nodes.find((node) => node.id === focus);
   const activeMode = mode === "person" && !focusNode ? "core" : mode;
   const view = useMemo(
-    () => networkSubset(nodes, links, activeMode, focus, activePower),
-    [nodes, links, activeMode, focus, activePower],
+    () =>
+      networkSubset(
+        nodes,
+        links,
+        activeMode,
+        focus,
+        activePower,
+        activeDensity,
+      ),
+    [nodes, links, activeMode, focus, activePower, activeDensity],
   );
   const height =
     activeMode === "person" && view.nodes.length <= 8
@@ -156,9 +167,10 @@ export function NetworkGraph({
       .append("marker")
       .attr("id", "relation-arrow")
       .attr("viewBox", "0 -4 8 8")
-      .attr("refX", 20)
-      .attr("markerWidth", 6)
-      .attr("markerHeight", 6)
+      .attr("refX", 22)
+      .attr("markerUnits", "userSpaceOnUse")
+      .attr("markerWidth", 8)
+      .attr("markerHeight", 8)
       .attr("orient", "auto")
       .append("path")
       .attr("d", "M0,-4L8,0L0,4")
@@ -179,7 +191,24 @@ export function NetworkGraph({
       .join("line")
       .attr("stroke", "transparent")
       .attr("stroke-width", 12)
+      .attr("class", "graph-edge")
+      .attr("role", "button")
+      .attr("tabindex", 0)
+      .attr(
+        "aria-label",
+        (link) =>
+          `${nodeNames.get(String(link.source))} → ${nodeNames.get(String(link.target))}：${link.action}`,
+      )
       .style("cursor", "pointer")
+      .on("keydown", (event, link) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          callbacks.current.onLinkClick?.(
+            (link.source as GraphNode).id,
+            (link.target as GraphNode).id,
+          );
+        }
+      })
       .on("click", (event, link) => {
         event.stopPropagation();
         callbacks.current.onLinkClick?.(
@@ -437,6 +466,27 @@ export function NetworkGraph({
           </button>
         )}
       </div>
+      {activeMode !== "person" && (
+        <label className="density-control">
+          图谱密度 · 至少提及 {activeDensity} 次
+          <input
+            type="range"
+            aria-label="最低提及次数"
+            min="1"
+            max={maxAppearances}
+            value={activeDensity}
+            onChange={(event) => setMinAppearances(Number(event.target.value))}
+          />
+          {activeDensity > 1 && (
+            <button
+              className="quiet-button"
+              onClick={() => setMinAppearances(1)}
+            >
+              重置密度
+            </button>
+          )}
+        </label>
+      )}
       <p className="context-note">
         {activeMode === "core"
           ? "先展示提及较多的最多 50 位人物；搜索姓名可查看直接关系。"
