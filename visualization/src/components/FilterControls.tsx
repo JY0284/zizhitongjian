@@ -1,196 +1,149 @@
-import type { KeyboardEvent } from 'react';
+import { useState } from "react";
+import { readFilterDraft } from "../utils/exploration";
 
 interface FilterControlsProps {
   juanRange: [number, number];
-  onJuanRangeChange: (range: [number, number]) => void;
-  onJuanRangeCommit: (range: [number, number]) => void;
-  maxJuan: number;
   timeRange: [number | null, number | null];
-  onTimeRangeChange: (range: [number | null, number | null]) => void;
-  onTimeRangeCommit: (range: [number | null, number | null]) => void;
-
+  maxJuan: number;
+  onApply: (
+    juans: [number, number],
+    years: [number | null, number | null],
+  ) => void;
+  onPreset: (
+    juans: [number, number],
+    years: [number | null, number | null],
+  ) => void;
   syncJuanYear: boolean;
   syncAvailable: boolean;
   onSyncJuanYearChange: (enabled: boolean) => void;
-  onPreset: (juans: [number, number], years: [number | null, number | null]) => void;
 }
 
 export function FilterControls({
   juanRange,
-  onJuanRangeChange,
-  onJuanRangeCommit,
-  maxJuan,
   timeRange,
-  onTimeRangeChange,
-  onTimeRangeCommit,
+  maxJuan,
+  onApply,
+  onPreset,
   syncJuanYear,
   syncAvailable,
   onSyncJuanYearChange,
-  onPreset,
 }: FilterControlsProps) {
-  const commitJuanOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      onJuanRangeCommit(juanRange);
-    }
+  const [juans, setJuans] = useState<[string, string]>([
+    String(juanRange[0]),
+    String(juanRange[1]),
+  ]);
+  const [years, setYears] = useState<[string, string]>(
+    timeRange.map((value) => (value === null ? "" : String(value))) as [
+      string,
+      string,
+    ],
+  );
+  const [error, setError] = useState("");
+  const preset = (range: [number, number]) => {
+    setJuans([String(range[0]), String(range[1])]);
+    setYears(["", ""]);
+    setError("");
+    onPreset(range, [null, null]);
   };
-
-  const commitTimeOnEnter = (e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Enter') {
-      onTimeRangeCommit(timeRange);
-    }
-  };
-
   return (
-    <div className="bg-white rounded-lg shadow-md p-4">
-      <h3 className="text-lg font-bold text-[#2c1810] mb-4">筛选控制</h3>
-
-      {/* Sync policy */}
-      <div className="mb-6">
-        <label className="flex items-center gap-2 text-sm text-[#2c1810]">
-          <input
-            type="checkbox"
-            checked={syncJuanYear}
-            disabled={!syncAvailable}
-            onChange={(e) => onSyncJuanYearChange(e.target.checked)}
-            className="accent-[#8b4513]"
-          />
-          <span className={!syncAvailable ? 'text-gray-400' : undefined}>卷↔年份联动</span>
-        </label>
-        {!syncAvailable && (
-          <p className="text-xs text-gray-400 mt-1">缺少 /data/juan_year_index.json，联动不可用</p>
-        )}
+    <form
+      className="surface filter-panel"
+      onSubmit={(event) => {
+        event.preventDefault();
+        const result = readFilterDraft(juans, years, maxJuan);
+        if (result.error !== undefined) {
+          setError(result.error);
+          return;
+        }
+        setError("");
+        onApply(result.juans, result.years);
+      }}
+    >
+      <div className="section-heading">
+        <h2>阅读范围</h2>
+        <span className="count-label">已收录前五卷</span>
       </div>
-
-      {/* Juan Range */}
-      <div className="mb-6">
-        <label className="block text-sm font-semibold text-[#8b4513] mb-2">
-          卷范围
-        </label>
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">起始卷</label>
-            <input
-              type="number"
-              min={1}
-              max={maxJuan}
-              value={juanRange[0]}
-              onChange={(e) =>
-                onJuanRangeChange([parseInt(e.target.value) || 1, juanRange[1]])
-              }
-              onBlur={() => onJuanRangeCommit(juanRange)}
-              onKeyDown={commitJuanOnEnter}
-              className="w-full mt-1 px-3 py-2 border border-[#d4c5b5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8b4513]"
-            />
-          </div>
-          <span className="text-gray-400 mt-6">—</span>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">结束卷</label>
-            <input
-              type="number"
-              min={1}
-              max={maxJuan}
-              value={juanRange[1]}
-              onChange={(e) =>
-                onJuanRangeChange([juanRange[0], parseInt(e.target.value) || maxJuan])
-              }
-              onBlur={() => onJuanRangeCommit(juanRange)}
-              onKeyDown={commitJuanOnEnter}
-              className="w-full mt-1 px-3 py-2 border border-[#d4c5b5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8b4513]"
-            />
-          </div>
+      <div className="preset-buttons">
+        <button type="button" onClick={() => preset([1, 1])}>
+          第一卷
+        </button>
+        <button type="button" onClick={() => preset([1, 5])}>
+          前五卷
+        </button>
+      </div>
+      <fieldset>
+        <legend>按卷选择</legend>
+        <div className="input-pair">
+          {(["起始卷", "结束卷"] as const).map((label, i) => (
+            <label key={label}>
+              {label}
+              <input
+                inputMode="numeric"
+                value={juans[i]}
+                onChange={(e) =>
+                  setJuans(
+                    i === 0
+                      ? [e.target.value, juans[1]]
+                      : [juans[0], e.target.value],
+                  )
+                }
+              />
+            </label>
+          ))}
         </div>
+      </fieldset>
+      <fieldset>
+        <legend>按年代细选</legend>
+        <p className="field-hint">公元前用负数，如 −403；留空不限。</p>
+        <div className="input-pair">
+          {(["起始年", "结束年"] as const).map((label, i) => (
+            <label key={label}>
+              {label}
+              <input
+                inputMode="text"
+                placeholder="不限"
+                value={years[i]}
+                onChange={(e) =>
+                  setYears(
+                    i === 0
+                      ? [e.target.value, years[1]]
+                      : [years[0], e.target.value],
+                  )
+                }
+              />
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <label className="check-label">
         <input
-          type="range"
-          min={1}
-          max={maxJuan}
-          value={juanRange[1]}
-          onChange={(e) =>
-            onJuanRangeChange([juanRange[0], parseInt(e.target.value)])
-          }
-          onMouseUp={() => onJuanRangeCommit(juanRange)}
-          onTouchEnd={() => onJuanRangeCommit(juanRange)}
-          className="w-full mt-2 accent-[#8b4513]"
+          type="checkbox"
+          checked={syncJuanYear}
+          disabled={!syncAvailable}
+          onChange={(e) => onSyncJuanYearChange(e.target.checked)}
         />
+        卷数与年代联动
+      </label>
+      <p className="field-hint">
+        只修改卷数或年代时，自动匹配另一项。限定年份后不包含年份待考的记载。
+      </p>
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="filter-actions">
+        <button className="primary-button" type="submit">
+          应用范围
+        </button>
+        <button
+          type="button"
+          className="quiet-button"
+          onClick={() => preset([1, 5])}
+        >
+          重置
+        </button>
       </div>
-
-      {/* Time Range */}
-      <div>
-        <label className="block text-sm font-semibold text-[#8b4513] mb-2">
-          时间范围（年，BCE 为负）
-        </label>
-        <div className="flex items-center gap-4">
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">起始年（如：-403 或 116）</label>
-            <input
-              type="number"
-              placeholder="不限"
-              value={timeRange[0] !== null ? timeRange[0] : ''}
-              onChange={(e) => {
-                const val = e.target.value ? parseInt(e.target.value) : null;
-                onTimeRangeChange([val, timeRange[1]]);
-              }}
-              onBlur={() => onTimeRangeCommit(timeRange)}
-              onKeyDown={commitTimeOnEnter}
-              className="w-full mt-1 px-3 py-2 border border-[#d4c5b5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8b4513]"
-            />
-          </div>
-          <span className="text-gray-400 mt-6">—</span>
-          <div className="flex-1">
-            <label className="text-xs text-gray-500">结束年（如：-368 或 125）</label>
-            <input
-              type="number"
-              placeholder="不限"
-              value={timeRange[1] !== null ? timeRange[1] : ''}
-              onChange={(e) => {
-                const val = e.target.value ? parseInt(e.target.value) : null;
-                onTimeRangeChange([timeRange[0], val]);
-              }}
-              onBlur={() => onTimeRangeCommit(timeRange)}
-              onKeyDown={commitTimeOnEnter}
-              className="w-full mt-1 px-3 py-2 border border-[#d4c5b5] rounded-lg focus:outline-none focus:ring-2 focus:ring-[#8b4513]"
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* Quick filters */}
-      <div className="mt-4">
-        <label className="block text-sm font-semibold text-[#8b4513] mb-2">
-          快速筛选
-        </label>
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => {
-              onPreset([1, 1], [null, null]);
-            }}
-            className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
-          >
-            第一卷
-          </button>
-          <button
-            onClick={() => onPreset([1, 5], [null, null])}
-            className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
-          >
-            前五卷
-          </button>
-          <button
-            onClick={() => {
-              onPreset([1, maxJuan], [-500, -400]);
-            }}
-            className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
-          >
-            战国初期
-          </button>
-          <button
-            onClick={() => {
-              onPreset([1, maxJuan], [null, null]);
-            }}
-            className="px-3 py-1 text-sm border border-[#8b4513] text-[#8b4513] rounded-full hover:bg-[#8b4513] hover:text-white transition-colors"
-          >
-            重置
-          </button>
-        </div>
-      </div>
-    </div>
+    </form>
   );
 }

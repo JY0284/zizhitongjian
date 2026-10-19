@@ -1,694 +1,512 @@
-import { useEffect, useRef, useState, useMemo, useCallback } from 'react';
-import * as d3 from 'd3';
-import type { RoleNodeUnified, RoleLinkUnified } from '../types/unified';
+import { useEffect, useRef, useState, useMemo } from "react";
+import * as d3 from "d3";
+import type { RoleNodeUnified, RoleLinkUnified } from "../types/unified";
+import {
+  networkSubset,
+  powerColor,
+  roleSearchNames,
+} from "../utils/exploration";
 
 interface NetworkGraphProps {
   nodes: RoleNodeUnified[];
   links: RoleLinkUnified[];
   onNodeClick?: (node: RoleNodeUnified) => void;
   onLinkClick?: (sourceId: string, targetId: string) => void;
-  focusNodeId?: string | null; // Node ID to focus/highlight from external trigger
-  onFocusNodeHandled?: () => void; // Callback when focus is handled
+  focusNodeId?: string | null;
+  onFocusNodeHandled?: () => void;
 }
-
-interface SimulationNode extends RoleNodeUnified {
-  x?: number;
-  y?: number;
-  fx?: number | null;
-  fy?: number | null;
-}
-
-interface SimulationLink {
-  source: SimulationNode;
-  target: SimulationNode;
+interface GraphNode extends RoleNodeUnified, d3.SimulationNodeDatum {}
+interface GraphLink extends d3.SimulationLinkDatum<GraphNode> {
   action: string;
   weight: number;
-  time: string | null;
 }
 
-/**
- * PERFORMANCE CRITICAL: Helper to create a stable key for data comparison.
- * 
- * This function is essential to prevent unnecessary D3 force simulation rebuilds.
- * 
- * Problem it solves:
- * - React's useMemo creates new array references even when data content is identical
- * - D3 force simulation is expensive to rebuild - it resets all node positions
- * - Without this check, clicking a node would cause the entire graph to "refresh"
- *   because the click handler triggers URL updates, which causes parent re-renders,
- *   which creates new array references for nodes/links props
- * 
- * How it works:
- * - Generates a string key from node IDs and link source-target pairs
- * - If the key matches the previous render, we skip rebuilding the simulation
- * - This allows interactions (clicks, hovers) without disrupting the graph layout
- * 
- * DO NOT REMOVE THIS - it's critical for usable graph interactions!
- */
-function createDataKey(nodes: RoleNodeUnified[], links: RoleLinkUnified[]): string {
-  const nodeIds = nodes.map(n => n.id).sort().join(',');
-  const linkIds = links.map(l => {
-    const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
-    const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
-    return `${sourceId}-${targetId}`;
-  }).sort().join(',');
-  return `${nodeIds}|${linkIds}`;
-}
-
-export function NetworkGraph({ nodes, links, onNodeClick, onLinkClick, focusNodeId, onFocusNodeHandled }: NetworkGraphProps) {
+export function NetworkGraph({
+  nodes,
+  links,
+  onNodeClick,
+  onLinkClick,
+  focusNodeId,
+  onFocusNodeHandled,
+}: NetworkGraphProps) {
+  const container = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [tooltip, setTooltip] = useState<{ x: number; y: number; content: RoleNodeUnified } | null>(null);
-  const [linkTooltip, setLinkTooltip] = useState<{ x: number; y: number; content: RoleLinkUnified; sourceName: string; targetName: string } | null>(null);
-  
-  // Use refs for callbacks to avoid re-triggering useEffect
-  const onNodeClickRef = useRef(onNodeClick);
-  const onLinkClickRef = useRef(onLinkClick);
-  useEffect(() => { onNodeClickRef.current = onNodeClick; }, [onNodeClick]);
-  useEffect(() => { onLinkClickRef.current = onLinkClick; }, [onLinkClick]);
-  
-  // PERFORMANCE: Refs to track simulation state and avoid unnecessary rebuilds.
-  // The D3 force simulation is expensive - rebuilding it resets all node positions.
-  // These refs allow us to check if data actually changed before rebuilding.
-  // See createDataKey() for detailed explanation.
-  const simulationRef = useRef<d3.Simulation<SimulationNode, SimulationLink> | null>(null);
-  const prevDataKeyRef = useRef<string>('');
-  
-  // Refs for zoom/pan functionality to center on focused nodes
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
-  const nodesDataRef = useRef<SimulationNode[]>([]);
-  const fitLayoutRef = useRef<() => void>(() => {});
-  
-  // Interactive state
-  const [searchTerm, setSearchTerm] = useState('');
-  const [minAppearances, setMinAppearances] = useState(1);
-  const [selectedPower, setSelectedPower] = useState<string>('all');
-  const [highlightOverride, setHighlightedNode] = useState<string | null>(null);
-  const [notFoundMessage, setNotFoundMessage] = useState<string | null>(null);
+  const fitRef = useRef<() => void>(() => {});
+  const callbacks = useRef({ onNodeClick, onLinkClick, onFocusNodeHandled });
+  useEffect(() => {
+    callbacks.current = { onNodeClick, onLinkClick, onFocusNodeHandled };
+  });
+  const [width, setWidth] = useState(800);
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"core" | "all" | "person">("core");
+  const [focus, setFocus] = useState<string | null>(null);
+  const [power, setPower] = useState("all");
+  const [hint, setHint] = useState("");
+  const powers = useMemo(
+    () =>
+      [...new Set(nodes.map((node) => node.power).filter(Boolean))] as string[],
+    [nodes],
+  );
+  const activePower = powers.includes(power) ? power : "all";
+  const focusNode = nodes.find((node) => node.id === focus);
+  const activeMode = mode === "person" && !focusNode ? "core" : mode;
+  const view = useMemo(
+    () => networkSubset(nodes, links, activeMode, focus, activePower),
+    [nodes, links, activeMode, focus, activePower],
+  );
+  const height =
+    activeMode === "person" && view.nodes.length <= 8
+      ? 300
+      : width < 600
+        ? 380
+        : 470;
+  const results = useMemo(() => {
+    const term = query.trim();
+    return term
+      ? nodes
+          .filter((node) =>
+            roleSearchNames(node.name, node.aliases).some((name) =>
+              name.includes(term),
+            ),
+          )
+          .sort(
+            (a, b) =>
+              Number(b.name === term) - Number(a.name === term) ||
+              b.appearances - a.appearances,
+          )
+      : [];
+  }, [nodes, query]);
+  const localRelations = useMemo(
+    () =>
+      focusNode && activeMode === "person"
+        ? links.filter(
+            (link) =>
+              link.source === focusNode.id || link.target === focusNode.id,
+          )
+        : [],
+    [links, focusNode, activeMode],
+  );
 
-  // Get unique powers for filter dropdown
-  const availablePowers = useMemo(() => {
-    const powers = new Set(nodes.map(n => n.power).filter(Boolean) as string[]);
-    return Array.from(powers).sort();
-  }, [nodes]);
-
-  // Filter nodes based on appearances and power
-  // Create fresh copies to avoid D3 mutating the original data
-  const filteredNodes = useMemo(() => {
-    return nodes
-      .filter(n => n.appearances >= minAppearances)
-      .filter(n => selectedPower === 'all' || n.power === selectedPower)
-      .map(n => ({ ...n }));
-  }, [nodes, minAppearances, selectedPower]);
-
-  // Filter links to match filtered nodes
-  // Note: We need to create fresh copies of links to avoid D3 mutating them with object references
-  const filteredLinks = useMemo(() => {
-    const nodeIds = new Set(filteredNodes.map(n => n.id));
-    return links
-      .filter(l => {
-        const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
-        const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
-        return nodeIds.has(sourceId) && nodeIds.has(targetId);
-      })
-      .map(l => ({
-        ...l,
-        // Reset source/target to string IDs for fresh simulation
-        source: typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source,
-        target: typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target,
-      }));
-  }, [links, filteredNodes]);
-
-  // Search functionality
-  const searchResult = useMemo(() => {
-    if (!searchTerm) return null;
-    return filteredNodes.find(n => 
-      n.name.includes(searchTerm) || 
-      n.aliases.some(a => a.includes(searchTerm))
+  useEffect(() => {
+    if (!container.current) return;
+    const observer = new ResizeObserver((entries) =>
+      setWidth(Math.max(280, Math.floor(entries[0].contentRect.width))),
     );
-  }, [filteredNodes, searchTerm]);
-
-  const searchResultRef = useRef(searchResult);
-  useEffect(() => { searchResultRef.current = searchResult; }, [searchResult]);
-
-  const highlightedNode = highlightOverride ?? searchResult?.id ?? null;
-
-  /**
-   * Center the graph view on a specific node with smooth animation.
-   * 
-   * This is called when:
-   * - User clicks on a related entity in a detail panel (RoleDetail, EventDetail, etc.)
-   * - The entity should become visually prominent in the network graph
-   * 
-   * The function:
-   * 1. Finds the node's current position from the simulation
-   * 2. Calculates a transform to center and zoom in on that node
-   * 3. Applies a smooth animated transition
-   */
-  const centerOnNode = useCallback((nodeId: string) => {
-    if (!svgRef.current || !containerRef.current || !zoomRef.current) return;
-    
-    // Find the node in the simulation data (which has x, y positions)
-    const node = nodesDataRef.current.find(n => n.id === nodeId || n.name === nodeId);
-    if (!node || node.x === undefined || node.y === undefined) return;
-    
-    const svg = d3.select(svgRef.current);
-    const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = 600;
-    
-    // Calculate transform to center on the node with a nice zoom level
-    const scale = 1.5; // Zoom in a bit to make the focused node prominent
-    const x = width / 2 - node.x * scale;
-    const y = height / 2 - node.y * scale;
-    
-    // Apply smooth transition to center on the node
-    svg.transition()
-      .duration(750)
-      .call(
-        zoomRef.current.transform,
-        d3.zoomIdentity.translate(x, y).scale(scale)
-      );
+    observer.observe(container.current);
+    return () => observer.disconnect();
   }, []);
 
-  /**
-   * Handle external focus request - highlight AND center on the node.
-   * 
-   * This effect responds to `focusNodeId` prop changes, which occur when:
-   * - User clicks on a related entity button in detail panels (EventDetail, RoleDetail, etc.)
-   * - User navigates via URL with a focus parameter
-   * 
-   * The effect:
-   * 1. Finds the node (by ID or name) in filtered nodes, or adjusts filters if needed
-   * 2. Sets the node as highlighted (dims other nodes, shows connections)
-   * 3. Centers the view on the node with a smooth zoom animation
-   * 
-   * The setTimeout delay ensures that if filters were changed, the simulation
-   * has time to include the newly visible node before we try to center on it.
-   */
   useEffect(() => {
-    if (focusNodeId) {
-      // Clear any previous not-found message
-      // This consumes an external focus command and synchronizes the D3 view.
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setNotFoundMessage(null);
-      
-      // Check if the node exists in filtered nodes (by ID, name, or alias)
-      let targetNodeId: string | null = null;
-      const nodeInFiltered = filteredNodes.find(n => 
-        n.id === focusNodeId || 
-        n.name === focusNodeId ||
-        n.aliases?.some(alias => alias === focusNodeId)
-      );
-      
-      if (nodeInFiltered) {
-        targetNodeId = nodeInFiltered.id;
-        setHighlightedNode(targetNodeId);
-        setSearchTerm(''); // Clear search when focusing externally
-      } else {
-        // Try to find by ID, name, or alias in all nodes and adjust filters
-        const node = nodes.find(n => 
-          n.id === focusNodeId || 
-          n.name === focusNodeId ||
-          n.aliases?.some(alias => alias === focusNodeId)
-        );
-        if (node) {
-          // Reset filters to show this node
-          setMinAppearances(1);
-          setSelectedPower('all');
-          targetNodeId = node.id;
-          setHighlightedNode(node.id);
-          setSearchTerm('');
-        } else {
-          // Node not found in the knowledge base
-          // This can happen when a related entity is mentioned but not extracted as a proper node
-          console.warn(`[NetworkGraph] Entity "${focusNodeId}" not found in graph nodes. It may be a generic term or an unextracted entity.`);
-          setNotFoundMessage(`"${focusNodeId}" 未在图谱中找到，可能是通用术语或未被提取的实体`);
-          // Auto-hide after 3 seconds
-          setTimeout(() => setNotFoundMessage(null), 3000);
-        }
-      }
-      
-      // Center view on the focused node after a short delay
-      // (allows time for filter changes to take effect if needed)
-      if (targetNodeId) {
-        const nodeIdToCenter = targetNodeId;
-        setTimeout(() => {
-          centerOnNode(nodeIdToCenter);
-        }, 100);
-      }
-      
-      onFocusNodeHandled?.();
-    }
-  }, [focusNodeId, filteredNodes, nodes, onFocusNodeHandled, centerOnNode]);
+    if (!focusNodeId) return;
+    const target = nodes.find(
+      (node) => node.id === focusNodeId || node.aliases.includes(focusNodeId),
+    );
+    // Consume the external navigation command; ordinary renders preserve graph state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setFocus(target?.id ?? null);
+    setMode(target ? "person" : "core");
+    setQuery("");
+    setHint(
+      target ? "" : "此人物在当前范围内没有已知的人物连线，详情仍可阅读。",
+    );
+    callbacks.current.onFocusNodeHandled?.();
+  }, [focusNodeId, nodes]);
 
-  useEffect(() => {
-    if (!svgRef.current || !containerRef.current) return;
-    if (filteredNodes.length === 0) {
-      d3.select(svgRef.current).attr('height', 0).selectAll('*').remove();
-      nodesDataRef.current = [];
-      zoomRef.current = null;
-      prevDataKeyRef.current = '';
-      return;
-    }
-
-    // PERFORMANCE CRITICAL: Check if the data actually changed by comparing keys.
-    // This prevents simulation rebuild when only interactions (clicks, hovers) occur.
-    // Without this check, clicking a node would reset all node positions!
-    // See createDataKey() function for detailed explanation.
-    const currentDataKey = createDataKey(filteredNodes, filteredLinks);
-    if (currentDataKey === prevDataKeyRef.current && simulationRef.current) {
-      // Data hasn't changed, skip rebuilding the simulation
-      return;
-    }
-    prevDataKeyRef.current = currentDataKey;
-
-    // Stop previous simulation if exists
-    if (simulationRef.current) {
-      simulationRef.current.stop();
-      simulationRef.current = null;
-    }
-
-    const container = containerRef.current;
-    const width = container.clientWidth;
-    const height = 600;
-
-    // Clear previous content
-    d3.select(svgRef.current).selectAll('*').remove();
-
-    const svg = d3
-      .select(svgRef.current)
-      .attr('width', width)
-      .attr('height', height)
-      .attr('viewBox', [0, 0, width, height]);
-
-    // Create a container group for zoom/pan
-    const g = svg.append('g');
-
-    // Add zoom behavior
-    let viewAdjusted = false;
-    const zoom = d3.zoom<SVGSVGElement, unknown>()
-      .scaleExtent([0.1, 4])
-      .on('zoom', (event) => {
-        viewAdjusted = true;
-        g.attr('transform', event.transform);
-      });
-
-    svg.call(zoom);
-    
-    // Store zoom ref for external centering functionality
-    zoomRef.current = zoom;
-
-    // Color scale for powers
-    const powers = [...new Set(filteredNodes.map((n) => n.power || '无'))];
-    const colorScale = d3.scaleOrdinal(d3.schemeTableau10).domain(powers);
-
-    // Create force simulation
-    const simulation = d3
-      .forceSimulation<SimulationNode>(filteredNodes as SimulationNode[])
-      .force(
-        'link',
-        d3
-          .forceLink<SimulationNode, SimulationLink>(filteredLinks as unknown as SimulationLink[])
-          .id((d) => d.id)
-          .distance(120)
-      )
-      .force('charge', d3.forceManyBody().strength(-300))
-      .force('center', d3.forceCenter(width / 2, height / 2))
-      .force('x', d3.forceX(width / 2).strength(0.08))
-      .force('y', d3.forceY(height / 2).strength(0.10))
-      .force('collision', d3.forceCollide().radius(24));
-    
-    // Store simulation reference
-    simulationRef.current = simulation;
-    
-    // Store nodes data ref for external access to node positions
-    nodesDataRef.current = filteredNodes as SimulationNode[];
-
-    // Create arrow marker
-    svg
-      .append('defs')
-      .append('marker')
-      .attr('id', 'arrowhead')
-      .attr('viewBox', '-0 -5 10 10')
-      .attr('refX', 20)
-      .attr('refY', 0)
-      .attr('orient', 'auto')
-      .attr('markerWidth', 6)
-      .attr('markerHeight', 6)
-      .append('path')
-      .attr('d', 'M 0,-5 L 10,0 L 0,5')
-      .attr('fill', '#999');
-
-    // Draw links
-    const link = g
-      .append('g')
-      .selectAll('line')
-      .data(filteredLinks)
-      .enter()
-      .append('line')
-      .attr('stroke', '#999')
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', (d) => Math.min(d.weight, 5))
-      .attr('marker-end', 'url(#arrowhead)')
-      .style('cursor', 'pointer')
-      .on('click', (event, d) => {
-        event.preventDefault();
-        event.stopPropagation();
-        event.stopImmediatePropagation();
-        const linkData = d as RoleLinkUnified;
-        const sourceId = typeof linkData.source === 'object' ? (linkData.source as SimulationNode).id : linkData.source;
-        const targetId = typeof linkData.target === 'object' ? (linkData.target as SimulationNode).id : linkData.target;
-        onLinkClickRef.current?.(sourceId, targetId);
-      })
-      .on('mouseover', (event, d) => {
-        const linkData = d as RoleLinkUnified;
-        const sourceId = typeof linkData.source === 'object' ? (linkData.source as SimulationNode).id : linkData.source;
-        const targetId = typeof linkData.target === 'object' ? (linkData.target as SimulationNode).id : linkData.target;
-        const sourceNode = filteredNodes.find(n => n.id === sourceId);
-        const targetNode = filteredNodes.find(n => n.id === targetId);
-        const [x, y] = d3.pointer(event, containerRef.current);
-        setLinkTooltip({
-          x: Math.max(8, Math.min(x + 10, (containerRef.current?.clientWidth ?? 800) - 460)),
-          y: Math.max(8, Math.min(y + 10, 400)),
-          content: linkData,
-          sourceName: sourceNode?.name || sourceId,
-          targetName: targetNode?.name || targetId,
-        });
-        d3.select(event.currentTarget)
-          .attr('stroke', '#8b4513')
-          .attr('stroke-opacity', 1)
-          .attr('stroke-width', Math.min(linkData.weight + 2, 8));
-      })
-      .on('mouseout', (event, d) => {
-        setLinkTooltip(null);
-        const linkData = d as RoleLinkUnified;
-        d3.select(event.currentTarget)
-          .attr('stroke', '#999')
-          .attr('stroke-opacity', 0.6)
-          .attr('stroke-width', Math.min(linkData.weight, 5));
-      });
-
-    // Draw nodes
-    const node = g
-      .append('g')
-      .attr('class', 'nodes-container')
-      .selectAll('g')
-      .data(filteredNodes as SimulationNode[])
-      .enter()
-      .append('g')
-      .attr('class', 'node-group')
-      .attr('role', 'button')
-      .attr('aria-label', d => d.name)
-      .attr('tabindex', 0)
-      .on('keydown', (event, d) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          onNodeClickRef.current?.(d);
-        }
-      })
-      .style('cursor', 'pointer')
-      .call(
-        d3
-          .drag<SVGGElement, SimulationNode>()
-          .on('start', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0.3).restart();
-            d.fx = d.x;
-            d.fy = d.y;
-          })
-          .on('drag', (event, d) => {
-            d.fx = event.x;
-            d.fy = event.y;
-          })
-          .on('end', (event, d) => {
-            if (!event.active) simulation.alphaTarget(0);
-            d.fx = null;
-            d.fy = null;
-          })
-      )
-      .on('click', (_, d) => onNodeClickRef.current?.(d))
-      .on('mouseover', (event, d) => {
-        const [x, y] = d3.pointer(event, containerRef.current);
-        setTooltip({
-          x: Math.max(8, Math.min(x + 10, (containerRef.current?.clientWidth ?? 800) - 340)),
-          y: Math.max(8, Math.min(y + 10, 400)),
-          content: d,
-        });
-        setHighlightedNode(d.id);
-      })
-      .on('mouseout', () => {
-        setTooltip(null);
-        setHighlightedNode(searchResultRef.current?.id ?? null);
-      });
-
-    // Node circles
-    node
-      .append('circle')
-      .attr('r', (d) => Math.min(8 + d.appearances * 2, 20))
-      .attr('fill', (d) => colorScale(d.power || '无'))
-      .attr('stroke', '#fff')
-      .attr('stroke-width', 2);
-
-    // Node labels
-    node
-      .append('text')
-      .attr('x', 0)
-      .attr('y', -15)
-      .attr('text-anchor', 'middle')
-      .style('font-size', '10px')
-      .style('fill', '#2c1810')
-      .text((d) => d.name);
-
-    // Update positions on simulation tick
-    simulation.on('tick', () => {
-      link
-        .attr('x1', (d) => (d.source as unknown as SimulationNode).x ?? 0)
-        .attr('y1', (d) => (d.source as unknown as SimulationNode).y ?? 0)
-        .attr('x2', (d) => (d.target as unknown as SimulationNode).x ?? 0)
-        .attr('y2', (d) => (d.target as unknown as SimulationNode).y ?? 0);
-
-      node.attr('transform', (d) => `translate(${d.x ?? 0}, ${d.y ?? 0})`);
-    });
-
-    // Disconnected groups can settle outside the SVG. Fit the initial layout,
-    // while preserving any pan, zoom, or focused-node navigation by the reader.
-    const fitLayout = () => {
-      if (width <= 64) return;
-      const positions = simulation.nodes();
-      const minX = d3.min(positions, d => d.x ?? 0) ?? 0;
-      const maxX = d3.max(positions, d => d.x ?? 0) ?? width;
-      const minY = d3.min(positions, d => d.y ?? 0) ?? 0;
-      const maxY = d3.max(positions, d => d.y ?? 0) ?? height;
-      const scale = Math.max(0.1, Math.min(1, (width - 64) / Math.max(1, maxX - minX),
-        (height - 64) / Math.max(1, maxY - minY)));
-      svg.call(zoom.transform, d3.zoomIdentity.translate(width / 2, height / 2)
-        .scale(scale).translate(-(minX + maxX) / 2, -(minY + maxY) / 2));
-    };
-    fitLayoutRef.current = fitLayout;
-    simulation.on('end', () => { if (!viewAdjusted) fitLayout(); });
-
-    // Add legend
-    const legend = svg
-      .append('g')
-      .attr('class', 'legend')
-      .attr('transform', `translate(${width - 120}, 20)`);
-
-    powers.slice(0, 8).forEach((power, i) => {
-      const legendRow = legend.append('g').attr('transform', `translate(0, ${i * 20})`);
-
-      legendRow
-        .append('circle')
-        .attr('r', 6)
-        .attr('fill', colorScale(power));
-
-      legendRow
-        .append('text')
-        .attr('x', 12)
-        .attr('y', 4)
-        .style('font-size', '11px')
-        .style('fill', '#2c1810')
-        .text(power.length > 6 ? power.slice(0, 6) + '...' : power);
-    });
-
-    // Cleanup
-    return () => {
-      simulation.stop();
-      simulationRef.current = null;
-    };
-  }, [filteredNodes, filteredLinks]); // Re-run only when filtered data changes, not on callback changes
-
-  // Effect for highlighting
   useEffect(() => {
     if (!svgRef.current) return;
-    
     const svg = d3.select(svgRef.current);
-    const node = svg.selectAll<SVGGElement, SimulationNode>('.node-group'); // Select only node groups, not legend
-    const link = svg.selectAll<SVGLineElement, SimulationLink>('line');
-
-    if (highlightedNode) {
-      // Find connected nodes
-      const connectedNodeIds = new Set<string>();
-      connectedNodeIds.add(highlightedNode);
-      
-      filteredLinks.forEach(l => {
-        const sourceId = typeof l.source === 'object' ? (l.source as SimulationNode).id : l.source;
-        const targetId = typeof l.target === 'object' ? (l.target as SimulationNode).id : l.target;
-        
-        if (sourceId === highlightedNode) connectedNodeIds.add(targetId);
-        if (targetId === highlightedNode) connectedNodeIds.add(sourceId);
+    svg.selectAll("*").remove();
+    svg.attr("viewBox", `0 0 ${width} ${height}`).attr("height", height);
+    if (!view.nodes.length) return;
+    const graphNodes: GraphNode[] = view.nodes.map((node) => ({ ...node }));
+    const graphLinks: GraphLink[] = view.links.map((link) => ({
+      source: link.source,
+      target: link.target,
+      action: link.action,
+      weight: link.weight,
+    }));
+    const nodeNames = new Map(graphNodes.map((node) => [node.id, node.name]));
+    const g = svg.append("g");
+    const mainLabels = new Set(
+      [...graphNodes]
+        .sort((a, b) => b.appearances - a.appearances)
+        .slice(0, 18)
+        .map((node) => node.id),
+    );
+    const showLabel = (node: GraphNode) =>
+      graphNodes.length <= 25 || mainLabels.has(node.id) || node.id === focus;
+    const zoom = d3
+      .zoom<SVGSVGElement, unknown>()
+      .scaleExtent([0.15, 5])
+      .on("zoom", (event) => {
+        g.attr("transform", event.transform);
+        g.selectAll<SVGTextElement, GraphNode>(".graph-label")
+          .attr("opacity", (node) =>
+            event.transform.k > 1.6 || showLabel(node) ? 1 : 0,
+          )
+          .attr("font-size", 12 / event.transform.k)
+          .attr("stroke-width", 3 / event.transform.k)
+          .attr("y", -15 - 8 / event.transform.k);
       });
-
-      // Dim unconnected nodes
-      node.style('opacity', (d) => d && d.id && connectedNodeIds.has(d.id) ? 1 : 0.1);
-      
-      // Dim unconnected links
-      link.style('opacity', (d) => {
-        if (!d) return 0.1;
-        const sourceId = typeof d.source === 'object' ? d.source?.id : d.source;
-        const targetId = typeof d.target === 'object' ? d.target?.id : d.target;
-        return (sourceId === highlightedNode || targetId === highlightedNode) ? 1 : 0.1;
+    zoomRef.current = zoom;
+    svg.call(zoom).on("dblclick.zoom", null);
+    svg
+      .append("defs")
+      .append("marker")
+      .attr("id", "relation-arrow")
+      .attr("viewBox", "0 -4 8 8")
+      .attr("refX", 20)
+      .attr("markerWidth", 6)
+      .attr("markerHeight", 6)
+      .attr("orient", "auto")
+      .append("path")
+      .attr("d", "M0,-4L8,0L0,4")
+      .attr("fill", "#8a9d99");
+    const edges = g
+      .append("g")
+      .selectAll("line")
+      .data(graphLinks)
+      .join("line")
+      .attr("stroke", "#a5b5b0")
+      .attr("stroke-width", (link) => Math.min(1 + Math.sqrt(link.weight), 4))
+      .attr("stroke-opacity", 0.55)
+      .attr("marker-end", "url(#relation-arrow)");
+    const hitEdges = g
+      .append("g")
+      .selectAll("line")
+      .data(graphLinks)
+      .join("line")
+      .attr("stroke", "transparent")
+      .attr("stroke-width", 12)
+      .style("cursor", "pointer")
+      .on("click", (event, link) => {
+        event.stopPropagation();
+        callbacks.current.onLinkClick?.(
+          (link.source as GraphNode).id,
+          (link.target as GraphNode).id,
+        );
       });
-    } else {
-      // Reset opacity
-      node.style('opacity', 1);
-      link.style('opacity', 1);
-    }
-  }, [highlightedNode, filteredLinks]);
+    hitEdges
+      .append("title")
+      .text(
+        (link) =>
+          `${nodeNames.get(String(link.source))} → ${nodeNames.get(String(link.target))}：${link.action}`,
+      );
+    const simulation = d3
+      .forceSimulation(graphNodes)
+      .force(
+        "link",
+        d3
+          .forceLink<GraphNode, GraphLink>(graphLinks)
+          .id((node) => node.id)
+          .distance(100),
+      )
+      .force("charge", d3.forceManyBody().strength(-260))
+      .force("center", d3.forceCenter(width / 2, height / 2))
+      .force("x", d3.forceX(width / 2).strength(0.08))
+      .force("y", d3.forceY(height / 2).strength(0.18))
+      .force(
+        "collision",
+        d3
+          .forceCollide<GraphNode>()
+          .radius((node) => (showLabel(node) ? 34 : 19)),
+      )
+      .stop();
+    simulation.tick(180);
+    const vertices = g
+      .append("g")
+      .selectAll<SVGGElement, GraphNode>("g")
+      .data(graphNodes)
+      .join("g")
+      .attr("class", "graph-node")
+      .attr("role", "button")
+      .attr("tabindex", 0)
+      .attr("aria-label", (node) => `查看人物 ${node.name}`)
+      .on("click", (_, node) => callbacks.current.onNodeClick?.(node))
+      .on("keydown", (event, node) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          callbacks.current.onNodeClick?.(node);
+        }
+      })
+      .on("mouseenter", (_, node) => {
+        const connected = new Set([node.id]);
+        graphLinks.forEach((link) => {
+          const a = (link.source as GraphNode).id,
+            b = (link.target as GraphNode).id;
+          if (a === node.id) connected.add(b);
+          if (b === node.id) connected.add(a);
+        });
+        vertices.attr("opacity", (item) => (connected.has(item.id) ? 1 : 0.16));
+        edges.attr("stroke-opacity", (link) =>
+          (link.source as GraphNode).id === node.id ||
+          (link.target as GraphNode).id === node.id
+            ? 0.95
+            : 0.07,
+        );
+        vertices
+          .select<SVGTextElement>(".graph-label")
+          .attr("opacity", (item) => (connected.has(item.id) ? 1 : 0));
+      })
+      .on("mouseleave", () => {
+        vertices.attr("opacity", 1);
+        edges.attr("stroke-opacity", 0.55);
+        vertices
+          .select<SVGTextElement>(".graph-label")
+          .attr("opacity", (node) =>
+            d3.zoomTransform(svgRef.current!).k > 1.6 || showLabel(node)
+              ? 1
+              : 0,
+          );
+      });
+    vertices
+      .append("circle")
+      .attr("r", (node) => Math.min(7 + Math.sqrt(node.appearances), 18))
+      .attr("fill", (node) => powerColor(node.power))
+      .attr("stroke", (node) => (node.id === focus ? "#233e39" : "#fff"))
+      .attr("stroke-width", (node) => (node.id === focus ? 3 : 2));
+    vertices
+      .append("text")
+      .attr("class", "graph-label")
+      .attr("text-anchor", "middle")
+      .attr("y", -23)
+      .attr("font-size", 12)
+      .attr("font-weight", 550)
+      .attr("fill", "#263d37")
+      .attr("stroke", "#fff")
+      .attr("stroke-width", 4)
+      .attr("paint-order", "stroke")
+      .text((node) =>
+        node.name.length > 12 ? node.name.slice(0, 11) + "…" : node.name,
+      );
+    vertices
+      .append("title")
+      .text(
+        (node) =>
+          `${node.name} · ${node.power || "归属未详"} · 提及 ${node.appearances} 次`,
+      );
+    const position = () => {
+      [edges, hitEdges].forEach((selection) =>
+        selection
+          .attr("x1", (link) => (link.source as GraphNode).x!)
+          .attr("y1", (link) => (link.source as GraphNode).y!)
+          .attr("x2", (link) => (link.target as GraphNode).x!)
+          .attr("y2", (link) => (link.target as GraphNode).y!),
+      );
+      vertices.attr("transform", (node) => `translate(${node.x},${node.y})`);
+    };
+    vertices.call(
+      d3
+        .drag<SVGGElement, GraphNode>()
+        .on("start", (_, node) => {
+          node.fx = node.x;
+          node.fy = node.y;
+        })
+        .on("drag", (event, node) => {
+          node.x = event.x;
+          node.y = event.y;
+          position();
+        })
+        .on("end", (_, node) => {
+          node.fx = null;
+          node.fy = null;
+        }),
+    );
+    position();
+    const fit = () => {
+      const x0 = d3.min(graphNodes, (node) => node.x!)!,
+        x1 = d3.max(graphNodes, (node) => node.x!)!;
+      const y0 = d3.min(graphNodes, (node) => node.y!)!,
+        y1 = d3.max(graphNodes, (node) => node.y!)!;
+      const scale = Math.min(
+        1.35,
+        (width - 90) / Math.max(1, x1 - x0),
+        (height - 90) / Math.max(1, y1 - y0),
+      );
+      svg.call(
+        zoom.transform,
+        d3.zoomIdentity
+          .translate(width / 2, height / 2)
+          .scale(scale)
+          .translate(-(x0 + x1) / 2, -(y0 + y1) / 2),
+      );
+    };
+    fitRef.current = fit;
+    fit();
+    return () => {
+      simulation.stop();
+      svg.on(".zoom", null);
+    };
+  }, [view, width, height, focus]);
 
+  const focusPerson = (id: string) => {
+    setFocus(id);
+    setMode("person");
+    setQuery("");
+    setHint("");
+  };
   return (
-    <div ref={containerRef} className="w-full bg-white rounded-lg shadow-md p-4 relative">
-      <div className="flex flex-wrap justify-between items-center mb-4 gap-2">
-        <h3 className="text-lg font-bold text-[#2c1810]">人物关系网络图</h3>
-        
-        <div className="flex flex-wrap gap-3 items-center">
-          {/* Search Input */}
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="搜索人物..."
-              value={searchTerm}
-              onChange={(e) => { setSearchTerm(e.target.value); setHighlightedNode(null); }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && searchResult) centerOnNode(searchResult.id);
-              }}
-              className="px-3 py-1 border border-[#d4c5b5] rounded-md text-sm focus:outline-none focus:border-[#8b4513] w-32"
-            />
-            {searchResult && (
-              <div className="absolute right-2 top-1.5 text-green-600 text-xs">
-                ✓
-              </div>
-            )}
-          </div>
-
-          {/* Power Filter */}
-          <div className="flex items-center gap-1 text-sm text-gray-600">
-            <span>势力:</span>
+    <section className="surface network-view">
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">由一人，读懂一段关系</p>
+          <h2>
+            {activeMode === "person" && focusNode
+              ? `${focusNode.name}的人物关系`
+              : "人物关系网"}
+          </h2>
+        </div>
+        <span className="count-label">
+          {view.nodes.length} / {nodes.length} 人物 · {view.links.length} 关系
+        </span>
+      </div>
+      <label className="search-field">
+        <span>查找人物</span>
+        <input
+          type="search"
+          value={query}
+          placeholder="输入姓名或别名，查看其直接关系"
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && results.length)
+              focusPerson(results[0].id);
+          }}
+        />
+      </label>
+      {query.trim() && (
+        <div className="search-results" aria-label="人物搜索结果">
+          {results.slice(0, 8).map((node) => (
+            <button key={node.id} onClick={() => focusPerson(node.id)}>
+              <strong>{node.name}</strong>
+              <span>{node.power || "归属未详"} · 聚焦关系 →</span>
+            </button>
+          ))}
+          {!results.length && (
+            <p role="status">
+              当前范围内未找到相连人物。试试更短的姓名或扩大卷数范围。
+            </p>
+          )}
+          {results.length > 8 && (
+            <p>共 {results.length} 位匹配人物，请继续输入以缩小范围。</p>
+          )}
+        </div>
+      )}
+      <div className="network-controls">
+        <div className="segmented">
+          <button
+            aria-pressed={activeMode === "core"}
+            onClick={() => {
+              setMode("core");
+              setFocus(null);
+            }}
+          >
+            重点人物
+          </button>
+          <button
+            aria-pressed={activeMode === "all"}
+            onClick={() => {
+              setMode("all");
+              setFocus(null);
+            }}
+          >
+            全部人物
+          </button>
+        </div>
+        {activeMode !== "person" && (
+          <label className="inline-select">
+            势力
             <select
-              value={selectedPower}
-              onChange={(e) => setSelectedPower(e.target.value)}
-              className="px-2 py-1 border border-[#d4c5b5] rounded-md text-sm focus:outline-none focus:border-[#8b4513] bg-white"
+              aria-label="关系网势力"
+              value={activePower}
+              onChange={(event) => setPower(event.target.value)}
             >
-              <option value="all">全部</option>
-              {availablePowers.map(power => (
-                <option key={power} value={power}>{power}</option>
+              <option value="all">全部势力</option>
+              {powers.map((value) => (
+                <option key={value}>{value}</option>
               ))}
             </select>
-          </div>
-
-          {/* Density Filter */}
-          <div className="flex items-center gap-2 text-sm text-gray-600">
-            <span>重要度:</span>
-            <input
-              type="range"
-              min="1"
-              max="20"
-              value={minAppearances}
-              onChange={(e) => setMinAppearances(parseInt(e.target.value))}
-              className="w-20 accent-[#8b4513]"
-            />
-            <span className="w-8 text-right">{minAppearances}+</span>
-          </div>
-        </div>
+          </label>
+        )}
+        {activeMode === "person" && focusNode && (
+          <button
+            className="quiet-button"
+            onClick={() => onNodeClick?.(focusNode)}
+          >
+            阅读 {focusNode.name} 详情 ↗
+          </button>
+        )}
       </div>
-
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-gray-500">
-        <button className="rounded border px-2 py-1" onClick={() => fitLayoutRef.current()}>适配画布</button>
-        {[['放大', 1.5], ['缩小', 1 / 1.5]].map(([label, factor]) => (
-          <button key={String(label)} className="rounded border px-2 py-1" onClick={() => {
-            if (svgRef.current && zoomRef.current) d3.select(svgRef.current).transition().duration(200)
-              .call(zoomRef.current.scaleBy, Number(factor));
-          }}>{label}</button>
+      <p className="context-note">
+        {activeMode === "core"
+          ? "先展示提及较多的最多 50 位人物；搜索姓名可查看直接关系。"
+          : activeMode === "all"
+            ? "全景适合观察结构；搜索一位人物，可以看清局部关系。"
+            : "仅显示此人物及有直接互动的人物；箭头表示行动方向。"}{" "}
+        节点大小表示提及次数，颜色表示势力。
+      </p>
+      {hint && (
+        <p className="context-note" role="status">
+          {hint}
+        </p>
+      )}
+      <div className="graph-toolbar">
+        <button onClick={() => fitRef.current()}>适配画布</button>
+        {[
+          ["放大", 1.4],
+          ["缩小", 1 / 1.4],
+        ].map(([label, factor]) => (
+          <button
+            key={label}
+            onClick={() => {
+              if (svgRef.current && zoomRef.current)
+                d3.select(svgRef.current).call(
+                  zoomRef.current.scaleBy,
+                  Number(factor),
+                );
+            }}
+          >
+            {label}
+          </button>
         ))}
-        <span>搜索后按 Enter 定位；滚轮缩放，拖动画布或人物。</span>
+        <span>拖动平移 · 点击人物或连线阅读</span>
       </div>
-
-      <svg ref={svgRef} className="w-full" />
-      {filteredNodes.length === 0 && <p className="py-12 text-center text-gray-500">当前筛选范围没有人物，请调整筛选条件。</p>}
-      
-      {/* Toast notification for entity not found */}
-      {notFoundMessage && (
-        <div className="absolute top-16 left-1/2 transform -translate-x-1/2 bg-amber-100 border border-amber-400 text-amber-800 px-4 py-2 rounded-lg shadow-lg z-20 animate-fade-in">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">⚠️</span>
-            <span className="text-sm">{notFoundMessage}</span>
+      <div className="graph-surface" ref={container}>
+        {view.nodes.length ? (
+          <svg ref={svgRef} aria-label="人物关系画布" />
+        ) : (
+          <div className="empty-state">
+            <h3>当前范围内没有相连人物</h3>
+            <p>试试其他势力，或返回前五卷。</p>
           </div>
-        </div>
+        )}
+      </div>
+      <div className="graph-legend">
+        {[...new Set(view.nodes.map((node) => node.power))].map((value) => (
+          <span key={value || "unknown"}>
+            <i style={{ background: powerColor(value) }} />
+            {value || "归属未详"}
+          </span>
+        ))}
+      </div>
+      {localRelations.length > 0 && (
+        <details className="relation-list">
+          <summary>用列表阅读这些关系 · {localRelations.length} 条</summary>
+          {localRelations.map((link, i) => (
+            <button
+              key={`${link.source}-${link.target}-${i}`}
+              onClick={() => onLinkClick?.(link.source, link.target)}
+            >
+              {nodes.find((node) => node.id === link.source)?.name ??
+                link.source}{" "}
+              →{" "}
+              {nodes.find((node) => node.id === link.target)?.name ??
+                link.target}
+              <span>{link.action}</span>
+            </button>
+          ))}
+        </details>
       )}
-      
-      {tooltip && (
-        <div
-          className="absolute bg-white border border-[#d4c5b5] rounded-lg shadow-lg p-3 z-10 w-80 max-w-[90vw] pointer-events-none break-words"
-          style={{
-            left: tooltip.x,
-            top: tooltip.y,
-          }}
-        >
-          <h4 className="font-bold text-[#8b4513]">{tooltip.content.name}</h4>
-          <p className="text-sm text-gray-600">势力: {tooltip.content.power || '无'}</p>
-          <p className="text-sm mt-1 line-clamp-3 break-words">{tooltip.content.description}</p>
-          <p className="text-xs text-gray-500 mt-1">出现次数: {tooltip.content.appearances}</p>
-          <p className="text-xs text-[#8b4513] mt-1 font-medium">点击查看详情</p>
-        </div>
-      )}
-
-      {linkTooltip && (
-        <div
-          className="absolute bg-white border border-[#8b4513] rounded-lg shadow-lg p-3 z-10 w-[28rem] max-w-[90vw] pointer-events-none break-words"
-          style={{
-            left: linkTooltip.x,
-            top: linkTooltip.y,
-          }}
-        >
-          <h4 className="font-bold text-[#8b4513]">
-            {linkTooltip.sourceName} → {linkTooltip.targetName}
-          </h4>
-          <p className="text-sm text-gray-700 mt-1">
-            <span className="font-medium">主要行动:</span> {linkTooltip.content.action}
-          </p>
-          <div className="text-sm mt-1">
-            <span className="font-medium text-gray-700">行动类型:</span>
-            <div className="flex flex-wrap gap-1 mt-1">
-              {linkTooltip.content.actionTypes?.slice(0, 5).map((type, i) => (
-                <span key={i} className="px-2 py-0.5 bg-[#f5f0e8] text-[#8b4513] rounded text-xs">
-                  {type}
-                </span>
-              ))}
-              {linkTooltip.content.actionTypes && linkTooltip.content.actionTypes.length > 5 && (
-                <span className="text-xs text-gray-500">
-                  +{linkTooltip.content.actionTypes.length - 5}更多
-                </span>
-              )}
-            </div>
-          </div>
-          <p className="text-xs text-gray-500 mt-2">
-            互动次数: {linkTooltip.content.weight}
-          </p>
-          {linkTooltip.content.time && (
-            <p className="text-xs text-gray-500">首次互动: {linkTooltip.content.time}</p>
-          )}
-          <p className="text-xs text-[#8b4513] mt-2 font-medium">点击查看详细记录</p>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }

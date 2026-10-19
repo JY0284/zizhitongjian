@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from "react";
 
 type GitHubRepoBadgeProps = {
   repoFullName: string; // e.g. "owner/repo"
@@ -10,7 +10,7 @@ type RepoResponse = {
   stargazers_count?: number;
 };
 
-const CACHE_KEY_PREFIX = 'githubRepoStats:';
+const CACHE_KEY_PREFIX = "githubRepoStats:";
 const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 type CachedValue = {
@@ -23,7 +23,11 @@ function readCache(key: string): CachedValue | null {
     const raw = localStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Partial<CachedValue>;
-    if (typeof parsed.stars !== 'number' || typeof parsed.fetchedAt !== 'number') return null;
+    if (
+      typeof parsed.stars !== "number" ||
+      typeof parsed.fetchedAt !== "number"
+    )
+      return null;
     return { stars: parsed.stars, fetchedAt: parsed.fetchedAt };
   } catch {
     return null;
@@ -38,12 +42,22 @@ function writeCache(key: string, value: CachedValue) {
   }
 }
 
-export function GitHubRepoBadge({ repoFullName, repoUrl, className }: GitHubRepoBadgeProps) {
+export function GitHubRepoBadge({
+  repoFullName,
+  repoUrl,
+  className,
+}: GitHubRepoBadgeProps) {
   const [stars, setStars] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const cacheKey = useMemo(() => `${CACHE_KEY_PREFIX}${repoFullName}`, [repoFullName]);
-  const apiUrl = useMemo(() => `https://api.github.com/repos/${repoFullName}`, [repoFullName]);
+  const cacheKey = useMemo(
+    () => `${CACHE_KEY_PREFIX}${repoFullName}`,
+    [repoFullName],
+  );
+  const apiUrl = useMemo(
+    () => `https://api.github.com/repos/${repoFullName}`,
+    [repoFullName],
+  );
 
   useEffect(() => {
     let cancelled = false;
@@ -70,13 +84,16 @@ export function GitHubRepoBadge({ repoFullName, repoUrl, className }: GitHubRepo
         const resp = await fetch(apiUrl, {
           signal: controller.signal,
           headers: {
-            Accept: 'application/vnd.github+json',
+            Accept: "application/vnd.github+json",
           },
         });
 
         if (!resp.ok) throw new Error(`GitHub API ${resp.status}`);
         const data = (await resp.json()) as RepoResponse;
-        const nextStars = typeof data.stargazers_count === 'number' ? data.stargazers_count : null;
+        const nextStars =
+          typeof data.stargazers_count === "number"
+            ? data.stargazers_count
+            : null;
 
         if (cancelled) return;
         if (nextStars !== null) {
@@ -102,28 +119,19 @@ export function GitHubRepoBadge({ repoFullName, repoUrl, className }: GitHubRepo
       href={repoUrl}
       target="_blank"
       rel="noreferrer"
-      className={
-        [
-          'inline-flex items-center gap-2 rounded-full',
-          'bg-white/10 border border-white/15 px-3 py-1.5',
-          'text-sm text-white/95 hover:bg-white/15 hover:border-white/25',
-          'transition-colors duration-200',
-          'backdrop-blur',
-          className ?? '',
-        ].join(' ')
-      }
+      className={["repo-badge", className ?? ""].join(" ")}
       aria-label={`Open ${repoFullName} on GitHub`}
     >
       <span className="font-medium">GitHub</span>
-      <span className="opacity-70">/</span>
-      <span className="font-semibold tracking-tight">{repoFullName}</span>
+
+      <span className="repo-name">{repoFullName}</span>
       <span className="ml-1 h-4 w-px bg-white/20" />
       <span className="inline-flex items-center gap-1 tabular-nums">
         <span className="opacity-90">★</span>
         {loading ? (
           <span className="inline-block w-10 h-4 rounded bg-white/15 animate-pulse" />
         ) : (
-          <span className="font-semibold">{stars ?? '—'}</span>
+          <span className="font-semibold">{stars ?? "—"}</span>
         )}
       </span>
     </a>
